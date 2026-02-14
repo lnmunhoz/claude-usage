@@ -5,6 +5,10 @@ import "./App.css";
 // Poll interval in seconds (change this to test frequent fetches)
 const POLL_INTERVAL_SECONDS = 5; // 5 minutes
 
+// Test mode: simulates a fake spend delta on every poll to test animations
+const TEST_MODE = true;
+const FAKE_DELTA_USD = 1.5;
+
 interface UsageData {
   percentUsed: number;
   usedUsd: number;
@@ -54,8 +58,11 @@ function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [animating, setAnimating] = useState(false);
   const [spendDelta, setSpendDelta] = useState<string | null>(null);
+  const [planPulsing, setPlanPulsing] = useState(false);
+  const [odPulsing, setOdPulsing] = useState(false);
   const isFirstLoad = useRef(true);
-  const prevTotalUsed = useRef<number | null>(null);
+  const prevPlanUsed = useRef<number | null>(null);
+  const prevOdUsed = useRef<number | null>(null);
 
   const fetchUsage = useCallback(async () => {
     try {
@@ -64,14 +71,31 @@ function App() {
       setUsage(data);
       setError(null);
 
-      // Compute spend delta
-      const newTotal = data.usedUsd + data.onDemandUsedUsd;
-      const prevTotal = prevTotalUsed.current;
-      if (prevTotal !== null && newTotal > prevTotal) {
-        const delta = newTotal - prevTotal;
-        setSpendDelta(`+$${delta.toFixed(2)}`);
+      // Compute per-bar deltas
+      const prevPlan = prevPlanUsed.current;
+      const prevOd = prevOdUsed.current;
+      let planDelta = prevPlan !== null ? data.usedUsd - prevPlan : 0;
+      let odDelta = prevOd !== null ? data.onDemandUsedUsd - prevOd : 0;
+      let totalDelta = planDelta + odDelta;
+
+      // Test mode: inject fake delta when no real change detected
+      if (TEST_MODE && !isFirstLoad.current && totalDelta < 0.001) {
+        const fakePlan = Math.random() > 0.5;
+        planDelta = fakePlan ? FAKE_DELTA_USD : 0;
+        odDelta = fakePlan ? 0 : FAKE_DELTA_USD;
+        totalDelta = FAKE_DELTA_USD;
       }
-      prevTotalUsed.current = newTotal;
+
+      if (totalDelta > 0.001) {
+        setSpendDelta(`+$${totalDelta.toFixed(2)}`);
+      }
+
+      // Pulse the bar(s) that changed
+      if (planDelta > 0.001) setPlanPulsing(true);
+      if (odDelta > 0.001) setOdPulsing(true);
+
+      prevPlanUsed.current = data.usedUsd;
+      prevOdUsed.current = data.onDemandUsedUsd;
 
       // Trigger shimmer animation (skip on first load)
       if (!isFirstLoad.current) {
@@ -97,9 +121,19 @@ function App() {
   // Clear spend delta after float-away animation completes
   useEffect(() => {
     if (!spendDelta) return;
-    const timer = setTimeout(() => setSpendDelta(null), 2100);
+    const timer = setTimeout(() => setSpendDelta(null), 3700);
     return () => clearTimeout(timer);
   }, [spendDelta, refreshKey]);
+
+  // Clear pulse states after animation completes
+  useEffect(() => {
+    if (!planPulsing && !odPulsing) return;
+    const timer = setTimeout(() => {
+      setPlanPulsing(false);
+      setOdPulsing(false);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [planPulsing, odPulsing, refreshKey]);
 
   useEffect(() => {
     fetchUsage();
@@ -127,6 +161,8 @@ function App() {
 
   const shimmerClass = animating ? "shimmer" : "";
   const bounceClass = animating ? "bounce" : "";
+  const planPulseClass = planPulsing ? "pulse-glow" : "";
+  const odPulseClass = odPulsing ? "pulse-glow" : "";
 
   return (
     <div className="widget" data-tauri-drag-region>
@@ -141,12 +177,21 @@ function App() {
       ) : (
         <>
           <div className="bars-row" data-tauri-drag-region>
+            {spendDelta && (
+              <span
+                key={`spend-${refreshKey}`}
+                className="spend-float"
+                data-tauri-drag-region
+              >
+                {spendDelta}
+              </span>
+            )}
             {/* Plan usage bar */}
             <div className="bar-column" data-tauri-drag-region>
               <div className="bar-track" data-tauri-drag-region>
                 <div
                   key={`plan-${refreshKey}`}
-                  className={`bar-fill ${shimmerClass}`}
+                  className={`bar-fill ${shimmerClass} ${planPulseClass}`}
                   data-tauri-drag-region
                   style={{
                     height: `${planFill}%`,
@@ -173,13 +218,13 @@ function App() {
                 <div className="bar-track" data-tauri-drag-region>
                   <div
                     key={`od-${refreshKey}`}
-                    className={`bar-fill ${shimmerClass}`}
-                    data-tauri-drag-region
-                    style={{
-                      height: `${odFill}%`,
-                      backgroundColor: odColor,
-                      boxShadow: `0 0 10px ${odGlow}, 0 0 4px ${odGlow}`,
-                    }}
+                  className={`bar-fill ${shimmerClass} ${odPulseClass}`}
+                  data-tauri-drag-region
+                  style={{
+                    height: `${odFill}%`,
+                    backgroundColor: odColor,
+                    boxShadow: `0 0 10px ${odGlow}, 0 0 4px ${odGlow}`,
+                  }}
                   />
                 </div>
                 <span
@@ -196,23 +241,12 @@ function App() {
             )}
           </div>
 
-          <div className="total-section" data-tauri-drag-region>
-            {spendDelta && (
-              <span
-                key={`spend-${refreshKey}`}
-                className="spend-float"
-                data-tauri-drag-region
-              >
-                {spendDelta}
-              </span>
-            )}
-            <div
-              key={`total-${refreshKey}`}
-              className={`total-percent ${bounceClass}`}
-              data-tauri-drag-region
-            >
-              {Math.round(totalPercent)}%
-            </div>
+          <div
+            key={`total-${refreshKey}`}
+            className={`total-percent ${bounceClass}`}
+            data-tauri-drag-region
+          >
+            {Math.round(totalPercent)}%
           </div>
           {usage?.membershipType && (
             <div className="plan-label" data-tauri-drag-region>
