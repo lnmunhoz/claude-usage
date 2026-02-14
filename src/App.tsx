@@ -205,7 +205,7 @@ function App() {
                 className={`bar-label ${bounceClass}`}
                 data-tauri-drag-region
               >
-                {Math.round(planPercent)}%
+                {planPercent.toFixed(1)}%
               </span>
               <span className="bar-tag" data-tauri-drag-region>
                 P
@@ -232,7 +232,7 @@ function App() {
                   className={`bar-label ${bounceClass}`}
                   data-tauri-drag-region
                 >
-                  {Math.round(odPercent)}%
+                  {odPercent.toFixed(1)}%
                 </span>
                 <span className="bar-tag" data-tauri-drag-region>
                   D
@@ -246,7 +246,7 @@ function App() {
             className={`total-percent ${bounceClass}`}
             data-tauri-drag-region
           >
-            {Math.round(totalPercent)}%
+            {totalPercent.toFixed(1)}%
           </div>
           {usage?.membershipType && (
             <div className="plan-label" data-tauri-drag-region>
