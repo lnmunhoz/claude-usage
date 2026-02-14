@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 
 // Poll interval in seconds (change this to test frequent fetches)
-const POLL_INTERVAL_SECONDS = 5; // 5 minutes
+const POLL_INTERVAL_SECONDS = 60; // 5 minutes
 
 // Test mode: simulates a fake spend delta on every poll to test animations
 const TEST_MODE = false;
