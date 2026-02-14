@@ -9,7 +9,7 @@ body,
 #root {
   height: 100%;
   width: 100%;
-  background: transparent;
+  /* background: transparent; */
   overflow: hidden;
 }
 
@@ -20,12 +20,12 @@ body,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8px 6px;
-  background: rgba(20, 20, 24, 0.85);
+  padding: 40px 6px 20px 6px;
+  background: rgba(20, 20, 24, 0.49);
   border-radius: 16px;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* border: 1px solid rgba(255, 255, 255, 0.08); */
   cursor: grab;
   user-select: none;
   gap: 6px;
@@ -209,8 +209,8 @@ body,
   transform: translateX(-50%);
   font-family: "SF Mono", "Menlo", "Monaco", monospace;
   font-size: 13px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.95);
+  font-weight: 400;
+  color: rgba(222, 24, 24, 0.95);
   text-align: center;
   line-height: 1;
   pointer-events: none;
@@ -222,7 +222,7 @@ body,
 @keyframes float-away {
   0% {
     opacity: 1;
-    top: 0;
+    top: -20px;
   }
   50% {
     opacity: 0.9;
@@ -232,7 +232,7 @@ body,
   }
   100% {
     opacity: 0;
-    top: -30px;
+    top: -40px;
   }
 }
 

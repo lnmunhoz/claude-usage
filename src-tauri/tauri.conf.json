@@ -16,7 +16,7 @@
         "label": "main",
         "title": "Cursor Juice",
         "width": 70,
-        "height": 340,
+        "height": 400,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,

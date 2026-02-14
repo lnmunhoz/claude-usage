@@ -87,7 +87,7 @@ function App() {
       }
 
       if (totalDelta > 0.001) {
-        setSpendDelta(`+$${totalDelta.toFixed(2)}`);
+        setSpendDelta(`-$${totalDelta.toFixed(2)}`);
       }
 
       // Pulse the bar(s) that changed
@@ -218,13 +218,13 @@ function App() {
                 <div className="bar-track" data-tauri-drag-region>
                   <div
                     key={`od-${refreshKey}`}
-                  className={`bar-fill ${shimmerClass} ${odPulseClass}`}
-                  data-tauri-drag-region
-                  style={{
-                    height: `${odFill}%`,
-                    backgroundColor: odColor,
-                    boxShadow: `0 0 10px ${odGlow}, 0 0 4px ${odGlow}`,
-                  }}
+                    className={`bar-fill ${shimmerClass} ${odPulseClass}`}
+                    data-tauri-drag-region
+                    style={{
+                      height: `${odFill}%`,
+                      backgroundColor: odColor,
+                      boxShadow: `0 0 10px ${odGlow}, 0 0 4px ${odGlow}`,
+                    }}
                   />
                 </div>
                 <span
