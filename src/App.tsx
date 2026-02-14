@@ -178,6 +178,7 @@ function App() {
 
   const hasOnDemand =
     usage?.onDemandLimitUsd != null && usage.onDemandLimitUsd > 0;
+  const showBothBars = showPlan && showOnDemand && hasOnDemand;
 
   // Total combined percentage across visible bars only
   const totalUsed =
@@ -237,9 +238,11 @@ function App() {
                 >
                   {planPercent.toFixed(1)}%
                 </span>
-                <span className="bar-tag" data-tauri-drag-region>
-                  P
-                </span>
+                {showBothBars && (
+                  <span className="bar-tag" data-tauri-drag-region>
+                    P
+                  </span>
+                )}
               </div>
             )}
 
@@ -265,20 +268,24 @@ function App() {
                 >
                   {odPercent.toFixed(1)}%
                 </span>
-                <span className="bar-tag" data-tauri-drag-region>
-                  D
-                </span>
+                {showBothBars && (
+                  <span className="bar-tag" data-tauri-drag-region>
+                    D
+                  </span>
+                )}
               </div>
             )}
           </div>
 
-          <div
-            key={`total-${refreshKey}`}
-            className={`total-percent ${bounceClass}`}
-            data-tauri-drag-region
-          >
-            {totalPercent.toFixed(1)}%
-          </div>
+          {showBothBars && (
+            <div
+              key={`total-${refreshKey}`}
+              className={`total-percent ${bounceClass}`}
+              data-tauri-drag-region
+            >
+              {totalPercent.toFixed(1)}%
+            </div>
+          )}
           {usage?.membershipType && (
             <div className="plan-label" data-tauri-drag-region>
               {usage.membershipType}

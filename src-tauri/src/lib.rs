@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, SubmenuBuilder};
+use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{Emitter, Manager};
 
 // Cookie names that Cursor uses for session auth
@@ -288,12 +288,20 @@ pub fn run() {
                     .checked(settings.show_on_demand)
                     .build(app)?;
 
-            let view_menu = SubmenuBuilder::new(app, "View")
-                .items(&[&show_plan_item, &show_od_item])
+            let about_item = PredefinedMenuItem::about(app, Some("About Cursor Juice"), None)?;
+            let quit_item = PredefinedMenuItem::quit(app, Some("Quit Cursor Juice"))?;
+
+            let app_menu = SubmenuBuilder::new(app, "Cursor Juice")
+                .item(&about_item)
+                .separator()
+                .item(&show_plan_item)
+                .item(&show_od_item)
+                .separator()
+                .item(&quit_item)
                 .build()?;
 
             let menu = MenuBuilder::new(app)
-                .items(&[&view_menu])
+                .items(&[&app_menu])
                 .build()?;
 
             app.set_menu(menu)?;
