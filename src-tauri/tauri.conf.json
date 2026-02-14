@@ -15,7 +15,7 @@
       {
         "label": "main",
         "title": "Cursor Juice",
-        "width": 90,
+        "width": 70,
         "height": 300,
         "decorations": false,
         "transparent": true,

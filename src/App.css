@@ -43,7 +43,7 @@ body,
   flex-direction: row;
   align-items: stretch;
   justify-content: center;
-  gap: 6px;
+  gap: 10px;
   min-height: 0;
 }
 
@@ -56,15 +56,16 @@ body,
   min-height: 0;
 }
 
-/* Progress bar */
+/* Progress bar - slim liquid glass style */
 .bar-track {
   flex: 1;
-  width: 18px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 9px;
+  width: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 5px;
   overflow: hidden;
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
   min-height: 0;
 }
 
@@ -73,22 +74,94 @@ body,
   bottom: 0;
   left: 0;
   right: 0;
-  border-radius: 9px;
+  border-radius: 5px;
   transition:
     height 0.8s cubic-bezier(0.4, 0, 0.2, 1),
     background-color 0.5s ease,
     box-shadow 0.5s ease;
 }
 
+/* Glass highlight - vertical light strip on the left */
+.bar-fill::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 1px;
+  bottom: 2px;
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.45),
+    rgba(255, 255, 255, 0.1) 40%,
+    rgba(255, 255, 255, 0) 80%
+  );
+  pointer-events: none;
+}
+
+/* Shimmer sweep on data update */
+.bar-fill::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 40%;
+  border-radius: 5px;
+  background: linear-gradient(
+    to top,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.25) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  opacity: 0;
+  pointer-events: none;
+  bottom: -40%;
+}
+
+.bar-fill.shimmer::after {
+  animation: shimmer-sweep 1s ease-out forwards;
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    bottom: -40%;
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    bottom: 100%;
+    opacity: 0;
+  }
+}
+
 /* Labels */
 .bar-label {
   font-family: "SF Mono", "Menlo", "Monaco", monospace;
-  font-size: 12px;
-  font-weight: 400;
+  font-size: 10px;
+  font-weight: 500;
   color: rgba(255, 255, 255, 0.85);
   letter-spacing: -0.02em;
   line-height: 1;
   text-align: center;
+  transition: transform 0.3s ease;
+}
+
+.bar-label.bounce {
+  animation: label-bounce 0.4s ease-out;
+}
+
+@keyframes label-bounce {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 /* Tag below the percentage (P = plan, D = on-demand) */
@@ -115,6 +188,11 @@ body,
   text-align: center;
   line-height: 1;
   letter-spacing: -0.03em;
+  transition: transform 0.3s ease;
+}
+
+.total-percent.bounce {
+  animation: label-bounce 0.4s ease-out;
 }
 
 /* Plan label */
