@@ -1,12 +1,13 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 
 // Poll interval in seconds (change this to test frequent fetches)
 const POLL_INTERVAL_SECONDS = 5; // 5 minutes
 
 // Test mode: simulates a fake spend delta on every poll to test animations
-const TEST_MODE = true;
+const TEST_MODE = false;
 const FAKE_DELTA_USD = 1.5;
 
 interface UsageData {
@@ -51,6 +52,11 @@ function getOdGlow(percent: number): string {
   return "rgba(239, 68, 68, 0.5)";
 }
 
+interface Settings {
+  showPlan: boolean;
+  showOnDemand: boolean;
+}
+
 function App() {
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +66,8 @@ function App() {
   const [spendDelta, setSpendDelta] = useState<string | null>(null);
   const [planPulsing, setPlanPulsing] = useState(false);
   const [odPulsing, setOdPulsing] = useState(false);
+  const [showPlan, setShowPlan] = useState(true);
+  const [showOnDemand, setShowOnDemand] = useState(true);
   const isFirstLoad = useRef(true);
   const prevPlanUsed = useRef<number | null>(null);
   const prevOdUsed = useRef<number | null>(null);
@@ -141,6 +149,23 @@ function App() {
     return () => clearInterval(interval);
   }, [fetchUsage]);
 
+  // Load initial settings and listen for changes from the native menu
+  useEffect(() => {
+    invoke<Settings>("get_settings").then((s) => {
+      setShowPlan(s.showPlan);
+      setShowOnDemand(s.showOnDemand);
+    });
+
+    const unlisten = listen<Settings>("settings-changed", (event) => {
+      setShowPlan(event.payload.showPlan);
+      setShowOnDemand(event.payload.showOnDemand);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   const planPercent = usage?.percentUsed ?? 0;
   const planFill = Math.min(100, Math.max(0, planPercent));
   const planColor = getPlanColor(planPercent);
@@ -154,9 +179,13 @@ function App() {
   const hasOnDemand =
     usage?.onDemandLimitUsd != null && usage.onDemandLimitUsd > 0;
 
-  // Total combined percentage across plan + on-demand
-  const totalUsed = (usage?.usedUsd ?? 0) + (usage?.onDemandUsedUsd ?? 0);
-  const totalLimit = (usage?.limitUsd ?? 0) + (usage?.onDemandLimitUsd ?? 0);
+  // Total combined percentage across visible bars only
+  const totalUsed =
+    (showPlan ? (usage?.usedUsd ?? 0) : 0) +
+    (showOnDemand ? (usage?.onDemandUsedUsd ?? 0) : 0);
+  const totalLimit =
+    (showPlan ? (usage?.limitUsd ?? 0) : 0) +
+    (showOnDemand ? (usage?.onDemandLimitUsd ?? 0) : 0);
   const totalPercent = totalLimit > 0 ? (totalUsed / totalLimit) * 100 : 0;
 
   const shimmerClass = animating ? "shimmer" : "";
@@ -187,33 +216,35 @@ function App() {
               </span>
             )}
             {/* Plan usage bar */}
-            <div className="bar-column" data-tauri-drag-region>
-              <div className="bar-track" data-tauri-drag-region>
-                <div
-                  key={`plan-${refreshKey}`}
-                  className={`bar-fill ${shimmerClass} ${planPulseClass}`}
+            {showPlan && (
+              <div className="bar-column" data-tauri-drag-region>
+                <div className="bar-track" data-tauri-drag-region>
+                  <div
+                    key={`plan-${refreshKey}`}
+                    className={`bar-fill ${shimmerClass} ${planPulseClass}`}
+                    data-tauri-drag-region
+                    style={{
+                      height: `${planFill}%`,
+                      backgroundColor: planColor,
+                      boxShadow: `0 0 10px ${planGlow}, 0 0 4px ${planGlow}`,
+                    }}
+                  />
+                </div>
+                <span
+                  key={`plan-label-${refreshKey}`}
+                  className={`bar-label ${bounceClass}`}
                   data-tauri-drag-region
-                  style={{
-                    height: `${planFill}%`,
-                    backgroundColor: planColor,
-                    boxShadow: `0 0 10px ${planGlow}, 0 0 4px ${planGlow}`,
-                  }}
-                />
+                >
+                  {planPercent.toFixed(1)}%
+                </span>
+                <span className="bar-tag" data-tauri-drag-region>
+                  P
+                </span>
               </div>
-              <span
-                key={`plan-label-${refreshKey}`}
-                className={`bar-label ${bounceClass}`}
-                data-tauri-drag-region
-              >
-                {planPercent.toFixed(1)}%
-              </span>
-              <span className="bar-tag" data-tauri-drag-region>
-                P
-              </span>
-            </div>
+            )}
 
             {/* On-demand usage bar */}
-            {hasOnDemand && (
+            {showOnDemand && hasOnDemand && (
               <div className="bar-column" data-tauri-drag-region>
                 <div className="bar-track" data-tauri-drag-region>
                   <div

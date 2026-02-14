@@ -1,4 +1,9 @@
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, SubmenuBuilder};
+use tauri::{Emitter, Manager};
 
 // Cookie names that Cursor uses for session auth
 const SESSION_COOKIE_NAMES: &[&str] = &[
@@ -58,6 +63,49 @@ pub struct UsageData {
     pub on_demand_limit_usd: Option<f64>,
     pub billing_cycle_end: Option<String>,
     pub membership_type: Option<String>,
+}
+
+// --- Settings ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Settings {
+    pub show_plan: bool,
+    pub show_on_demand: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            show_plan: true,
+            show_on_demand: true,
+        }
+    }
+}
+
+fn settings_path() -> PathBuf {
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("cursor-juice");
+    config_dir.join("settings.json")
+}
+
+fn load_settings() -> Settings {
+    let path = settings_path();
+    match fs::read_to_string(&path) {
+        Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
+        Err(_) => Settings::default(),
+    }
+}
+
+fn save_settings(settings: &Settings) {
+    let path = settings_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(settings) {
+        let _ = fs::write(&path, json);
+    }
 }
 
 // --- Cookie Import ---
@@ -174,26 +222,16 @@ async fn fetch_cursor_usage() -> Result<UsageData, String> {
     let limit_cents = plan.and_then(|p| p.limit).unwrap_or(0) as f64;
     let remaining_cents = plan.and_then(|p| p.remaining).unwrap_or(0) as f64;
 
-    // Prefer totalPercentUsed from the API (matches what Cursor IDE displays)
-    // Fall back to manual calculation only if the API doesn't provide it
-    let api_percent = plan.and_then(|p| p.total_percent_used);
-    let percent_used = if let Some(p) = api_percent {
-        // API returns 0.0-1.0 range, convert to 0-100
-        if p <= 1.0 { p * 100.0 } else { p }
-    } else if limit_cents > 0.0 {
+    // Use dollar-based calculation: used / limit * 100
+    let percent_used = if limit_cents > 0.0 {
         (used_cents / limit_cents) * 100.0
     } else {
         0.0
     };
 
-    let calculated_percent = if limit_cents > 0.0 {
-        (used_cents / limit_cents) * 100.0
-    } else {
-        0.0
-    };
     println!(
-        "[cursor-juice] Plan percent: API={:?}, calculated={:.2}%, using={:.2}%",
-        api_percent, calculated_percent, percent_used
+        "[cursor-juice] Plan percent: {:.2}% (${:.2} / ${:.2})",
+        percent_used, used_cents / 100.0, limit_cents / 100.0
     );
 
     let od_used_cents = on_demand.and_then(|o| o.used).unwrap_or(0) as f64;
@@ -227,11 +265,65 @@ async fn fetch_cursor_usage() -> Result<UsageData, String> {
     Ok(result)
 }
 
+#[tauri::command]
+fn get_settings(state: tauri::State<'_, Mutex<Settings>>) -> Settings {
+    state.lock().unwrap().clone()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![fetch_cursor_usage])
+        .manage(Mutex::new(load_settings()))
+        .invoke_handler(tauri::generate_handler![fetch_cursor_usage, get_settings])
+        .setup(|app| {
+            let settings = load_settings();
+
+            let show_plan_item =
+                CheckMenuItemBuilder::with_id("show_plan", "Show Plan Usage")
+                    .checked(settings.show_plan)
+                    .build(app)?;
+            let show_od_item =
+                CheckMenuItemBuilder::with_id("show_on_demand", "Show On-Demand Usage")
+                    .checked(settings.show_on_demand)
+                    .build(app)?;
+
+            let view_menu = SubmenuBuilder::new(app, "View")
+                .items(&[&show_plan_item, &show_od_item])
+                .build()?;
+
+            let menu = MenuBuilder::new(app)
+                .items(&[&view_menu])
+                .build()?;
+
+            app.set_menu(menu)?;
+
+            app.on_menu_event(move |app_handle, event| {
+                let id = event.id().0.as_str();
+                match id {
+                    "show_plan" | "show_on_demand" => {
+                        let state = app_handle.state::<Mutex<Settings>>();
+                        let mut settings = state.lock().unwrap();
+                        if id == "show_plan" {
+                            settings.show_plan =
+                                show_plan_item.is_checked().unwrap_or(true);
+                        } else {
+                            settings.show_on_demand =
+                                show_od_item.is_checked().unwrap_or(true);
+                        }
+                        save_settings(&settings);
+                        let _ = app_handle.emit("settings-changed", settings.clone());
+                        println!(
+                            "[cursor-juice] Settings changed: show_plan={}, show_on_demand={}",
+                            settings.show_plan, settings.show_on_demand
+                        );
+                    }
+                    _ => {}
+                }
+            });
+
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
