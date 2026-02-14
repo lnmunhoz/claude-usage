@@ -53,7 +53,9 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [animating, setAnimating] = useState(false);
+  const [spendDelta, setSpendDelta] = useState<string | null>(null);
   const isFirstLoad = useRef(true);
+  const prevTotalUsed = useRef<number | null>(null);
 
   const fetchUsage = useCallback(async () => {
     try {
@@ -61,6 +63,15 @@ function App() {
       console.log(data);
       setUsage(data);
       setError(null);
+
+      // Compute spend delta
+      const newTotal = data.usedUsd + data.onDemandUsedUsd;
+      const prevTotal = prevTotalUsed.current;
+      if (prevTotal !== null && newTotal > prevTotal) {
+        const delta = newTotal - prevTotal;
+        setSpendDelta(`+$${delta.toFixed(2)}`);
+      }
+      prevTotalUsed.current = newTotal;
 
       // Trigger shimmer animation (skip on first load)
       if (!isFirstLoad.current) {
@@ -82,6 +93,13 @@ function App() {
     const timer = setTimeout(() => setAnimating(false), 1100);
     return () => clearTimeout(timer);
   }, [animating, refreshKey]);
+
+  // Clear spend delta after float-away animation completes
+  useEffect(() => {
+    if (!spendDelta) return;
+    const timer = setTimeout(() => setSpendDelta(null), 2100);
+    return () => clearTimeout(timer);
+  }, [spendDelta, refreshKey]);
 
   useEffect(() => {
     fetchUsage();
@@ -178,12 +196,23 @@ function App() {
             )}
           </div>
 
-          <div
-            key={`total-${refreshKey}`}
-            className={`total-percent ${bounceClass}`}
-            data-tauri-drag-region
-          >
-            {Math.round(totalPercent)}%
+          <div className="total-section" data-tauri-drag-region>
+            {spendDelta && (
+              <span
+                key={`spend-${refreshKey}`}
+                className="spend-float"
+                data-tauri-drag-region
+              >
+                {spendDelta}
+              </span>
+            )}
+            <div
+              key={`total-${refreshKey}`}
+              className={`total-percent ${bounceClass}`}
+              data-tauri-drag-region
+            >
+              {Math.round(totalPercent)}%
+            </div>
           </div>
           {usage?.membershipType && (
             <div className="plan-label" data-tauri-drag-region>
