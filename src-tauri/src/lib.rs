@@ -170,7 +170,7 @@ struct ClaudeOAuthUsageResponse {
 fn settings_path() -> PathBuf {
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("cursor-juice");
+        .join("token-juice");
     config_dir.join("settings.json")
 }
 
@@ -197,21 +197,21 @@ fn save_settings(settings: &Settings) {
 fn find_cursor_cookie_header() -> Result<String, String> {
     // Try loading cookies from all browsers at once
     let domains: Vec<String> = CURSOR_DOMAINS.iter().map(|d| d.to_string()).collect();
-    println!("[cursor-juice] Searching for cookies in domains: {:?}", domains);
+    println!("[token-juice] Searching for cookies in domains: {:?}", domains);
 
     let cookies = rookie::load(Some(domains)).map_err(|e| {
         let msg = format!("Failed to read browser cookies: {}", e);
-        eprintln!("[cursor-juice] {}", msg);
+        eprintln!("[token-juice] {}", msg);
         msg
     })?;
 
     println!(
-        "[cursor-juice] Found {} cookies from cursor domains",
+        "[token-juice] Found {} cookies from cursor domains",
         cookies.len()
     );
     for cookie in &cookies {
         println!(
-            "[cursor-juice]   cookie: name={}, domain={}",
+            "[token-juice]   cookie: name={}, domain={}",
             cookie.name, cookie.domain
         );
     }
@@ -220,7 +220,7 @@ fn find_cursor_cookie_header() -> Result<String, String> {
     for cookie in &cookies {
         if SESSION_COOKIE_NAMES.contains(&cookie.name.as_str()) {
             println!(
-                "[cursor-juice] Found session cookie: {}",
+                "[token-juice] Found session cookie: {}",
                 cookie.name
             );
             // Build a cookie header with all cookies from cursor domains
@@ -236,7 +236,7 @@ fn find_cursor_cookie_header() -> Result<String, String> {
     let msg =
         "No Cursor session cookie found. Make sure you are logged into cursor.com in your browser."
             .to_string();
-    eprintln!("[cursor-juice] {}", msg);
+    eprintln!("[token-juice] {}", msg);
     Err(msg)
 }
 
@@ -449,18 +449,18 @@ fn run_security_lookup(account: Option<&str>) -> Result<String, String> {
 
 #[cfg(target_os = "macos")]
 fn read_keychain_oauth_blob() -> Result<(ClaudeOAuthBlob, String), String> {
-    println!("[cursor-juice] Claude auth: checking macOS Keychain service 'Claude Code-credentials'...");
+    println!("[token-juice] Claude auth: checking macOS Keychain service 'Claude Code-credentials'...");
     let account = std::env::var("USER").ok();
     let raw = if let Some(ref acct) = account {
         println!(
-            "[cursor-juice] Claude auth: trying keychain lookup scoped to account '{}'.",
+            "[token-juice] Claude auth: trying keychain lookup scoped to account '{}'.",
             acct
         );
         match run_security_lookup(Some(acct)) {
             Ok(raw) => raw,
             Err(account_err) => {
                 println!(
-                    "[cursor-juice] Claude auth: account-scoped lookup failed ({}). Trying unscoped lookup...",
+                    "[token-juice] Claude auth: account-scoped lookup failed ({}). Trying unscoped lookup...",
                     account_err
                 );
                 run_security_lookup(None)?
@@ -468,7 +468,7 @@ fn read_keychain_oauth_blob() -> Result<(ClaudeOAuthBlob, String), String> {
         }
     } else {
         println!(
-            "[cursor-juice] Claude auth: USER env var unavailable. Trying unscoped keychain lookup..."
+            "[token-juice] Claude auth: USER env var unavailable. Trying unscoped keychain lookup..."
         );
         run_security_lookup(None)?
     };
@@ -515,7 +515,7 @@ fn write_keychain_oauth_blob(blob: &ClaudeOAuthBlob, account: &str) -> Result<()
         return Err(format!("Failed to update keychain: {}", stderr.trim()));
     }
 
-    println!("[cursor-juice] Claude auth: keychain entry updated with refreshed token.");
+    println!("[token-juice] Claude auth: keychain entry updated with refreshed token.");
     Ok(())
 }
 
@@ -531,7 +531,7 @@ async fn refresh_claude_token(
     blob: &ClaudeOAuthBlob,
     account: &str,
 ) -> Result<ClaudeCredentials, String> {
-    println!("[cursor-juice] Claude auth: attempting OAuth token refresh...");
+    println!("[token-juice] Claude auth: attempting OAuth token refresh...");
 
     let client = reqwest::Client::new();
     let response = client
@@ -548,7 +548,7 @@ async fn refresh_claude_token(
 
     let status = response.status();
     println!(
-        "[cursor-juice] Claude auth: token refresh endpoint returned HTTP {}.",
+        "[token-juice] Claude auth: token refresh endpoint returned HTTP {}.",
         status
     );
 
@@ -594,13 +594,13 @@ async fn refresh_claude_token(
     {
         if let Err(e) = write_keychain_oauth_blob(&updated_blob, account) {
             println!(
-                "[cursor-juice] Claude auth: warning - could not update keychain ({}). Token will work for this session only.",
+                "[token-juice] Claude auth: warning - could not update keychain ({}). Token will work for this session only.",
                 e
             );
         }
     }
 
-    println!("[cursor-juice] Claude auth: token refresh succeeded.");
+    println!("[token-juice] Claude auth: token refresh succeeded.");
     Ok(ClaudeCredentials {
         access_token: Some(new_access_token),
         rate_limit_tier: updated_blob.rate_limit_tier,
@@ -634,7 +634,7 @@ async fn load_claude_credentials_from_keychain() -> Result<ClaudeCredentials, St
             return Err("Claude OAuth token from keychain is missing user:profile scope.".to_string());
         }
         println!(
-            "[cursor-juice] Claude auth: keychain token has user:profile scope."
+            "[token-juice] Claude auth: keychain token has user:profile scope."
         );
     }
 
@@ -646,7 +646,7 @@ async fn load_claude_credentials_from_keychain() -> Result<ClaudeCredentials, St
             .unwrap_or(0);
         if expires_at_ms <= now_ms + 60_000 {
             println!(
-                "[cursor-juice] Claude auth: keychain access token is expired (expired {}ms ago). Checking for refresh token...",
+                "[token-juice] Claude auth: keychain access token is expired (expired {}ms ago). Checking for refresh token...",
                 now_ms - expires_at_ms
             );
             if let Some(ref refresh_token) = oauth.refresh_token {
@@ -658,7 +658,7 @@ async fn load_claude_credentials_from_keychain() -> Result<ClaudeCredentials, St
     }
 
     println!(
-        "[cursor-juice] Claude auth: keychain credentials are usable (scope + expiry checks passed)."
+        "[token-juice] Claude auth: keychain credentials are usable (scope + expiry checks passed)."
     );
 
     Ok(ClaudeCredentials {
@@ -673,10 +673,10 @@ fn read_keychain_oauth_blob() -> Result<(ClaudeOAuthBlob, String), String> {
 }
 
 fn load_claude_credentials_from_file() -> Result<ClaudeCredentials, String> {
-    println!("[cursor-juice] Claude auth: checking file-based OAuth credentials...");
+    println!("[token-juice] Claude auth: checking file-based OAuth credentials...");
     let path = claude_credentials_path()?;
     println!(
-        "[cursor-juice] Claude auth: using credentials file at {}",
+        "[token-juice] Claude auth: using credentials file at {}",
         path.display()
     );
     let raw = fs::read_to_string(&path).map_err(|e| {
@@ -692,25 +692,25 @@ fn load_claude_credentials_from_file() -> Result<ClaudeCredentials, String> {
     if let Some(access_token) = credentials.access_token.as_deref() {
         validate_claude_oauth_access_token(access_token, "credentials file")?;
     }
-    println!("[cursor-juice] Claude auth: credentials file parsed successfully.");
+    println!("[token-juice] Claude auth: credentials file parsed successfully.");
     Ok(credentials)
 }
 
 async fn load_claude_credentials() -> Result<ClaudeCredentials, String> {
-    println!("[cursor-juice] Claude auth: starting credential source resolution (keychain -> file).");
+    println!("[token-juice] Claude auth: starting credential source resolution (keychain -> file).");
     match load_claude_credentials_from_keychain().await {
         Ok(credentials) => {
-            println!("[cursor-juice] Claude auth: using keychain credentials.");
+            println!("[token-juice] Claude auth: using keychain credentials.");
             return Ok(credentials);
         }
         Err(keychain_err) => {
             println!(
-                "[cursor-juice] Claude auth: keychain unavailable/unusable ({}). Trying credentials file...",
+                "[token-juice] Claude auth: keychain unavailable/unusable ({}). Trying credentials file...",
                 keychain_err
             );
             match load_claude_credentials_from_file() {
                 Ok(credentials) => {
-                    println!("[cursor-juice] Claude auth: using file credentials.");
+                    println!("[token-juice] Claude auth: using file credentials.");
                     return Ok(credentials);
                 }
                 Err(file_err) => {
@@ -745,14 +745,14 @@ fn find_claude_session_cookies() -> Result<Vec<String>, String> {
 }
 
 async fn fetch_claude_usage_oauth() -> Result<ClaudeUsageData, String> {
-    println!("[cursor-juice] Claude auth: OAuth path selected.");
+    println!("[token-juice] Claude auth: OAuth path selected.");
     let credentials = load_claude_credentials().await?;
     let access_token = credentials
         .access_token
         .as_deref()
         .ok_or_else(|| "Claude credentials are missing accessToken.".to_string())?;
     println!(
-        "[cursor-juice] Claude auth: requesting OAuth usage endpoint with resolved credentials."
+        "[token-juice] Claude auth: requesting OAuth usage endpoint with resolved credentials."
     );
 
     let client = reqwest::Client::new();
@@ -767,7 +767,7 @@ async fn fetch_claude_usage_oauth() -> Result<ClaudeUsageData, String> {
         .map_err(|e| format!("Claude OAuth request failed: {}", e))?;
 
     let status = response.status();
-    println!("[cursor-juice] Claude OAuth usage endpoint status: {}", status);
+    println!("[token-juice] Claude OAuth usage endpoint status: {}", status);
     if !status.is_success() {
         return Err(format!("Claude OAuth API returned HTTP {}", status));
     }
@@ -777,7 +777,7 @@ async fn fetch_claude_usage_oauth() -> Result<ClaudeUsageData, String> {
         .await
         .map_err(|e| format!("Failed to read Claude OAuth response body: {}", e))?;
     println!(
-        "[cursor-juice] Claude OAuth raw response: {}",
+        "[token-juice] Claude OAuth raw response: {}",
         &body[..body.len().min(500)]
     );
 
@@ -838,7 +838,7 @@ async fn fetch_claude_usage_oauth() -> Result<ClaudeUsageData, String> {
     };
 
     println!(
-        "[cursor-juice] Claude usage parsed: session={:.1}%, weekly={:.1}%, session_reset={:?}, weekly_reset={:?}, extra_spend={:?}, extra_limit={:?}",
+        "[token-juice] Claude usage parsed: session={:.1}%, weekly={:.1}%, session_reset={:?}, weekly_reset={:?}, extra_spend={:?}, extra_limit={:?}",
         session_percent_used, weekly_percent_used, session_reset, weekly_reset, extra_usage_spend, extra_usage_limit
     );
 
@@ -854,10 +854,10 @@ async fn fetch_claude_usage_oauth() -> Result<ClaudeUsageData, String> {
 }
 
 async fn fetch_claude_usage_web() -> Result<ClaudeUsageData, String> {
-    println!("[cursor-juice] Claude auth: entering web-cookie fallback.");
+    println!("[token-juice] Claude auth: entering web-cookie fallback.");
     let session_keys = find_claude_session_cookies()?;
     println!(
-        "[cursor-juice] Claude auth: found {} claude.ai sessionKey candidate(s).",
+        "[token-juice] Claude auth: found {} claude.ai sessionKey candidate(s).",
         session_keys.len()
     );
     let client = reqwest::Client::new();
@@ -866,7 +866,7 @@ async fn fetch_claude_usage_web() -> Result<ClaudeUsageData, String> {
     for (idx, session_key) in session_keys.iter().enumerate() {
         let cookie_header = format!("sessionKey={}", session_key);
         println!(
-            "[cursor-juice] Claude web: trying sessionKey candidate {}/{}...",
+            "[token-juice] Claude web: trying sessionKey candidate {}/{}...",
             idx + 1,
             session_keys.len()
         );
@@ -880,7 +880,7 @@ async fn fetch_claude_usage_web() -> Result<ClaudeUsageData, String> {
             .await
             .map_err(|e| format!("Failed to fetch Claude organizations: {}", e))?;
         println!(
-            "[cursor-juice] Claude web organizations endpoint status: {}",
+            "[token-juice] Claude web organizations endpoint status: {}",
             org_response.status()
         );
 
@@ -915,7 +915,7 @@ async fn fetch_claude_usage_web() -> Result<ClaudeUsageData, String> {
             .await
             .map_err(|e| format!("Failed to fetch Claude usage: {}", e))?;
         println!(
-            "[cursor-juice] Claude web usage endpoint status: {}",
+            "[token-juice] Claude web usage endpoint status: {}",
             usage_response.status()
         );
 
@@ -935,7 +935,7 @@ async fn fetch_claude_usage_web() -> Result<ClaudeUsageData, String> {
             .await
             .map_err(|e| format!("Failed to read Claude usage body: {}", e))?;
         println!(
-            "[cursor-juice] Claude web usage raw response: {}",
+            "[token-juice] Claude web usage raw response: {}",
             &usage_body[..usage_body.len().min(500)]
         );
         let usage_value: Value = serde_json::from_str(&usage_body)
@@ -997,7 +997,7 @@ async fn fetch_claude_usage_web() -> Result<ClaudeUsageData, String> {
         }
 
         println!(
-            "[cursor-juice] Claude web: selected sessionKey candidate {}/{}.",
+            "[token-juice] Claude web: selected sessionKey candidate {}/{}.",
             idx + 1,
             session_keys.len()
         );
@@ -1043,10 +1043,10 @@ fn create_claude_window(app_handle: &AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn fetch_cursor_usage() -> Result<UsageData, String> {
-    println!("[cursor-juice] fetch_cursor_usage called");
+    println!("[token-juice] fetch_cursor_usage called");
 
     let cookie_header = find_cursor_cookie_header()?;
-    println!("[cursor-juice] Got cookie header, making API request...");
+    println!("[token-juice] Got cookie header, making API request...");
 
     let client = reqwest::Client::new();
     let response = client
@@ -1058,36 +1058,36 @@ async fn fetch_cursor_usage() -> Result<UsageData, String> {
         .await
         .map_err(|e| {
             let msg = format!("Network error: {}", e);
-            eprintln!("[cursor-juice] {}", msg);
+            eprintln!("[token-juice] {}", msg);
             msg
         })?;
 
     let status = response.status();
-    println!("[cursor-juice] API response status: {}", status);
+    println!("[token-juice] API response status: {}", status);
 
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
         let msg = "Not logged in. Please log into cursor.com in your browser and try again.";
-        eprintln!("[cursor-juice] {}", msg);
+        eprintln!("[token-juice] {}", msg);
         return Err(msg.to_string());
     }
 
     if !status.is_success() {
         let msg = format!("Cursor API returned HTTP {}", status);
-        eprintln!("[cursor-juice] {}", msg);
+        eprintln!("[token-juice] {}", msg);
         return Err(msg);
     }
 
     // Read raw body first for debugging
     let body = response.text().await.map_err(|e| {
         let msg = format!("Failed to read response body: {}", e);
-        eprintln!("[cursor-juice] {}", msg);
+        eprintln!("[token-juice] {}", msg);
         msg
     })?;
-    println!("[cursor-juice] Raw API response: {}", &body[..body.len().min(500)]);
+    println!("[token-juice] Raw API response: {}", &body[..body.len().min(500)]);
 
     let summary: CursorUsageSummary = serde_json::from_str(&body).map_err(|e| {
         let msg = format!("Failed to parse Cursor API response: {}", e);
-        eprintln!("[cursor-juice] {}", msg);
+        eprintln!("[token-juice] {}", msg);
         msg
     })?;
 
@@ -1113,7 +1113,7 @@ async fn fetch_cursor_usage() -> Result<UsageData, String> {
     };
 
     println!(
-        "[cursor-juice] Plan percent: {:.2}% (${:.2} / ${:.2})",
+        "[token-juice] Plan percent: {:.2}% (${:.2} / ${:.2})",
         percent_used, used_cents / 100.0, limit_cents / 100.0
     );
 
@@ -1138,7 +1138,7 @@ async fn fetch_cursor_usage() -> Result<UsageData, String> {
     };
 
     println!(
-        "[cursor-juice] Plan: {:.1}% (${:.2} / ${:.2}) | On-demand: {:.1}% (${:.2} / ${}) | membership: {:?}",
+        "[token-juice] Plan: {:.1}% (${:.2} / ${:.2}) | On-demand: {:.1}% (${:.2} / ${}) | membership: {:?}",
         result.percent_used, result.used_usd, result.limit_usd,
         result.on_demand_percent_used, result.on_demand_used_usd,
         result.on_demand_limit_usd.map(|v| format!("{:.2}", v)).unwrap_or("unlimited".to_string()),
@@ -1150,20 +1150,20 @@ async fn fetch_cursor_usage() -> Result<UsageData, String> {
 
 #[tauri::command]
 async fn fetch_claude_usage() -> Result<ClaudeUsageData, String> {
-    println!("[cursor-juice] fetch_claude_usage called");
+    println!("[token-juice] fetch_claude_usage called");
     match fetch_claude_usage_oauth().await {
         Ok(data) => {
-            println!("[cursor-juice] Claude auth: OAuth usage fetch succeeded.");
+            println!("[token-juice] Claude auth: OAuth usage fetch succeeded.");
             Ok(data)
         }
         Err(oauth_err) => {
             if oauth_err.contains("No usable Claude OAuth credentials available") {
                 println!(
-                    "[cursor-juice] Claude OAuth credentials unavailable; using web fallback..."
+                    "[token-juice] Claude OAuth credentials unavailable; using web fallback..."
                 );
             } else {
                 println!(
-                    "[cursor-juice] Claude OAuth failed ({}), attempting web fallback...",
+                    "[token-juice] Claude OAuth failed ({}), attempting web fallback...",
                     oauth_err
                 );
             }
@@ -1208,10 +1208,10 @@ pub fn run() {
                     .checked(settings.show_claude_window)
                     .build(app)?;
 
-            let about_item = PredefinedMenuItem::about(app, Some("About Cursor Juice"), None)?;
-            let quit_item = PredefinedMenuItem::quit(app, Some("Quit Cursor Juice"))?;
+            let about_item = PredefinedMenuItem::about(app, Some("About Token Juice"), None)?;
+            let quit_item = PredefinedMenuItem::quit(app, Some("Quit Token Juice"))?;
 
-            let app_menu = SubmenuBuilder::new(app, "Cursor Juice")
+            let app_menu = SubmenuBuilder::new(app, "Token Juice")
                 .item(&about_item)
                 .separator()
                 .item(&show_plan_item)
@@ -1254,7 +1254,7 @@ pub fn run() {
                         save_settings(&settings);
                         let _ = app_handle.emit("settings-changed", settings.clone());
                         println!(
-                            "[cursor-juice] Settings changed: show_plan={}, show_on_demand={}, show_claude_window={}",
+                            "[token-juice] Settings changed: show_plan={}, show_on_demand={}, show_claude_window={}",
                             settings.show_plan, settings.show_on_demand, settings.show_claude_window
                         );
                     }

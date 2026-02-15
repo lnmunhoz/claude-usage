@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Cursor Juice",
+  "productName": "Token Juice",
   "version": "0.1.0",
-  "identifier": "com.cursorjuice.app",
+  "identifier": "com.tokenjuice.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:3008",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Cursor Juice",
+        "title": "Token Juice",
         "width": 70,
         "height": 400,
         "decorations": false,

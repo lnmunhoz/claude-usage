@@ -831,21 +831,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cursor-juice"
-version = "0.1.0"
-dependencies = [
- "dirs",
- "reqwest 0.12.28",
- "rookie",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tokio",
-]
-
-[[package]]
 name = "darling"
 version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4964,6 +4949,21 @@ checksum = "42d3e9c45c09de15d06dd8acf5f4e0e399e85927b7f00711024eb7ae10fa4869"
 dependencies = [
  "displaydoc",
  "zerovec",
+]
+
+[[package]]
+name = "token-juice"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "reqwest 0.12.28",
+ "rookie",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tokio",
 ]
 
 [[package]]
