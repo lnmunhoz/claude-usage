@@ -402,6 +402,7 @@ fn claude_credentials_path() -> Result<PathBuf, String> {
                 continue;
             }
             let candidate = PathBuf::from(trimmed).join(".credentials.json");
+            println!("[token-juice] Claude auth: trying credentials path {} (exists={})", candidate.display(), candidate.exists());
             if candidate.exists() {
                 return Ok(candidate);
             }
@@ -414,9 +415,10 @@ fn claude_credentials_path() -> Result<PathBuf, String> {
         home.join(".claude").join(".credentials.json"),
         home.join(".config").join("claude").join(".credentials.json"),
     ];
-    for candidate in candidates {
+    for candidate in &candidates {
+        println!("[token-juice] Claude auth: trying credentials path {} (exists={})", candidate.display(), candidate.exists());
         if candidate.exists() {
-            return Ok(candidate);
+            return Ok(candidate.clone());
         }
     }
 
@@ -704,10 +706,27 @@ fn load_claude_credentials_from_file() -> Result<ClaudeCredentials, String> {
         )
     })?;
 
-    let credentials = serde_json::from_str::<ClaudeCredentials>(&raw)
-        .map_err(|e| format!("Failed to parse Claude credentials JSON: {}", e))?;
+    // Support both flat format { "accessToken": "..." } and keychain-style { "claudeAiOauth": { "accessToken": "..." } }
+    let credentials = if let Ok(payload) = serde_json::from_str::<ClaudeKeychainPayload>(&raw) {
+        if let Some(oauth) = payload.claude_ai_oauth {
+            println!("[token-juice] Claude auth: credentials file uses keychain-style (claudeAiOauth) format.");
+            ClaudeCredentials {
+                access_token: oauth.access_token,
+                rate_limit_tier: oauth.rate_limit_tier,
+            }
+        } else {
+            serde_json::from_str::<ClaudeCredentials>(&raw)
+                .map_err(|e| format!("Failed to parse Claude credentials JSON: {}", e))?
+        }
+    } else {
+        serde_json::from_str::<ClaudeCredentials>(&raw)
+            .map_err(|e| format!("Failed to parse Claude credentials JSON: {}", e))?
+    };
+
     if let Some(access_token) = credentials.access_token.as_deref() {
         validate_claude_oauth_access_token(access_token, "credentials file")?;
+    } else {
+        return Err("Claude credentials file has no accessToken (and no claudeAiOauth.accessToken).".to_string());
     }
     println!("[token-juice] Claude auth: credentials file parsed successfully.");
     Ok(credentials)
