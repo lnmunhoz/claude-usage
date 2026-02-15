@@ -54,11 +54,38 @@ pnpm tauri dev
 
 ## Build for Production
 
+### macOS (Apple Silicon)
+
+```bash
+pnpm build:mac
+```
+
+The output will be in `src-tauri/target/aarch64-apple-darwin/release/bundle/` and includes:
+- `.dmg` installer
+- `.app` bundle
+
+### Linux (x86_64)
+
+```bash
+pnpm build:linux
+```
+
+> Requires the `x86_64-unknown-linux-gnu` Rust target. Install it with:
+> ```bash
+> rustup target add x86_64-unknown-linux-gnu
+> ```
+
+The output will be in `src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/` and includes:
+- `.deb` package
+- `.AppImage`
+
+### Generic build
+
 ```bash
 pnpm tauri build
 ```
 
-The bundled app will be available in `src-tauri/target/release/bundle/`.
+Builds for your current platform and architecture. The output will be in `src-tauri/target/release/bundle/`.
 
 ## Tech Stack
 
