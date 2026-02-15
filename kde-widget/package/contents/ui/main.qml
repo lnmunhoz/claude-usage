@@ -173,5 +173,4 @@ PlasmoidItem {
     compactRepresentation: CompactRepresentation {}
     fullRepresentation: FullRepresentation {}
 
-    preferredRepresentation: fullRepresentation
 }
