@@ -67,11 +67,11 @@ ColumnLayout {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 4
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 6
 
                 UsageBar {
                     Layout.fillHeight: true
-                    Layout.fillWidth: true
                     percent: root.cursorPlanPercent
                     tag: "P"
                     barColor: "#818cf8"
@@ -81,13 +81,21 @@ ColumnLayout {
 
                 UsageBar {
                     Layout.fillHeight: true
-                    Layout.fillWidth: true
                     percent: root.cursorOnDemandPercent
                     tag: "D"
                     barColor: "#22c55e"
                     glowColor: "#22c55e"
                     displayMode: root.displayMode
                 }
+            }
+
+            // Reset info
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                visible: root.cursorBillingCycleEnd.length > 0
+                text: "Resets " + root.cursorBillingCycleEnd.substring(0, 10)
+                font.pixelSize: 8
+                color: Kirigami.Theme.disabledTextColor
             }
         }
 
@@ -131,11 +139,11 @@ ColumnLayout {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 4
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 6
 
                 UsageBar {
                     Layout.fillHeight: true
-                    Layout.fillWidth: true
                     percent: root.claudeSessionPercent
                     tag: "5h"
                     barColor: "#facc15"
@@ -145,13 +153,29 @@ ColumnLayout {
 
                 UsageBar {
                     Layout.fillHeight: true
-                    Layout.fillWidth: true
                     percent: root.claudeWeeklyPercent
                     tag: "Wk"
                     barColor: "#f97316"
                     glowColor: "#f97316"
                     displayMode: root.displayMode
                 }
+            }
+
+            // Reset info
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                visible: root.claudeSessionReset.length > 0
+                text: "5h: " + fullRoot.formatReset(root.claudeSessionReset)
+                font.pixelSize: 8
+                color: Kirigami.Theme.disabledTextColor
+            }
+
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                visible: root.claudeWeeklyReset.length > 0
+                text: "Wk: " + fullRoot.formatReset(root.claudeWeeklyReset)
+                font.pixelSize: 8
+                color: Kirigami.Theme.disabledTextColor
             }
         }
     }

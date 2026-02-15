@@ -41,10 +41,8 @@ ColumnLayout {
 
     // The bar track
     Item {
-        Layout.fillWidth: true
+        Layout.preferredWidth: 18
         Layout.fillHeight: true
-        Layout.minimumWidth: 8
-        Layout.maximumWidth: 14
         Layout.minimumHeight: 60
         Layout.alignment: Qt.AlignHCenter
 
