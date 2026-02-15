@@ -26,4 +26,5 @@ rookie = "0.5"
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 dirs = "6"
+tauri-plugin-autostart = "2"
 

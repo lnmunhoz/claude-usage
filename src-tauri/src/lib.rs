@@ -6,6 +6,7 @@ use std::process::Command;
 use std::sync::Mutex;
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_autostart::ManagerExt;
 
 // Cookie names that Cursor uses for session auth
 const SESSION_COOKIE_NAMES: &[&str] = &[
@@ -1253,6 +1254,7 @@ fn save_poll_interval(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(Mutex::new(load_settings()))
         .invoke_handler(tauri::generate_handler![
             fetch_cursor_usage,
@@ -1280,6 +1282,13 @@ pub fn run() {
                     .checked(settings.display_mode == "remaining")
                     .build(app)?;
 
+            let autostart_manager = app.autolaunch();
+            let is_autostart = autostart_manager.is_enabled().unwrap_or(false);
+            let launch_at_login_item =
+                CheckMenuItemBuilder::with_id("launch_at_login", "Launch at Login")
+                    .checked(is_autostart)
+                    .build(app)?;
+
             let about_item = PredefinedMenuItem::about(app, Some("About Token Juice"), None)?;
             let quit_item = PredefinedMenuItem::quit(app, Some("Quit Token Juice"))?;
 
@@ -1293,6 +1302,8 @@ pub fn run() {
                 .item(&remaining_mode_item)
                 .separator()
                 .text("configure_interval", "Configure Refresh Interval...")
+                .separator()
+                .item(&launch_at_login_item)
                 .separator()
                 .item(&quit_item)
                 .build()?;
@@ -1343,6 +1354,15 @@ pub fn run() {
                     }
                     "configure_interval" => {
                         let _ = create_settings_window(app_handle);
+                    }
+                    "launch_at_login" => {
+                        let manager = app_handle.autolaunch();
+                        let checked = launch_at_login_item.is_checked().unwrap_or(false);
+                        if checked {
+                            let _ = manager.enable();
+                        } else {
+                            let _ = manager.disable();
+                        }
                     }
                     _ => {}
                 }
