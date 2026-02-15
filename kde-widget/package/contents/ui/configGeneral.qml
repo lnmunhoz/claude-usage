@@ -7,7 +7,8 @@ Kirigami.FormLayout {
     id: configPage
 
     property alias cfg_pollIntervalSeconds: pollIntervalSpinBox.value
-    property alias cfg_defaultProvider: providerCombo.currentIndex
+    property alias cfg_showCursor: showCursorCheck.checked
+    property alias cfg_showClaude: showClaudeCheck.checked
     property alias cfg_displayMode: displayModeCombo.currentIndex
     property alias cfg_helperPath: helperPathField.text
 
@@ -20,16 +21,17 @@ Kirigami.FormLayout {
         value: plasmoid.configuration.pollIntervalSeconds
     }
 
-    QQC2.ComboBox {
-        id: providerCombo
-        Kirigami.FormData.label: i18n("Default provider:")
-        model: ["cursor", "claude"]
-        currentIndex: model.indexOf(plasmoid.configuration.defaultProvider)
-        onCurrentIndexChanged: {
-            if (currentIndex >= 0) {
-                plasmoid.configuration.defaultProvider = model[currentIndex]
-            }
-        }
+    QQC2.CheckBox {
+        id: showCursorCheck
+        Kirigami.FormData.label: i18n("Providers:")
+        text: i18n("Show Cursor")
+        checked: plasmoid.configuration.showCursor
+    }
+
+    QQC2.CheckBox {
+        id: showClaudeCheck
+        text: i18n("Show Claude")
+        checked: plasmoid.configuration.showClaude
     }
 
     QQC2.ComboBox {

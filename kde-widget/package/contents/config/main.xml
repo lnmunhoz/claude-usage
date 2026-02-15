@@ -13,9 +13,14 @@
             <max>3600</max>
         </entry>
 
-        <entry name="defaultProvider" type="String">
-            <default>cursor</default>
-            <label>Which provider to show by default</label>
+        <entry name="showCursor" type="Bool">
+            <default>true</default>
+            <label>Show Cursor usage</label>
+        </entry>
+
+        <entry name="showClaude" type="Bool">
+            <default>true</default>
+            <label>Show Claude usage</label>
         </entry>
 
         <entry name="displayMode" type="String">

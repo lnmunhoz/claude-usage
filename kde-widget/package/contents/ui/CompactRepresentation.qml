@@ -6,76 +6,111 @@ import org.kde.kirigami as Kirigami
 MouseArea {
     id: compactRoot
 
-    readonly property bool isVertical: (plasmoid.formFactor === PlasmaCore.Types.Vertical)
     readonly property int iconSize: Math.min(width, height)
 
     hoverEnabled: true
     onClicked: root.expanded = !root.expanded
 
-    // Two small bars as the compact icon
+    // Mini bars for all enabled providers
     RowLayout {
         anchors.centerIn: parent
-        spacing: 2
+        spacing: 1
 
+        // Cursor bars
         Rectangle {
-            id: bar1
-            width: Math.max(4, iconSize * 0.2)
+            visible: root.showCursor
+            width: Math.max(3, iconSize * 0.15)
             height: iconSize
-            radius: 2
+            radius: 1.5
             color: "transparent"
 
             Rectangle {
                 anchors.bottom: parent.bottom
                 width: parent.width
+                radius: 1.5
                 height: {
-                    var pct = root.currentProvider === "cursor" ? root.cursorPlanPercent : root.claudeSessionPercent
+                    var pct = root.cursorPlanPercent
                     if (root.displayMode === "remaining") pct = 100 - pct
                     return parent.height * Math.max(0, Math.min(100, pct)) / 100
                 }
-                radius: 2
-                color: root.currentProvider === "cursor" ? "#818cf8" : "#facc15"
-
-                Behavior on height { NumberAnimation { duration: 400; easing.type: Easing.InOutQuad } }
+                color: "#818cf8"
+                Behavior on height { NumberAnimation { duration: 400 } }
             }
-
-            // Track background
-            Rectangle {
-                anchors.fill: parent
-                radius: 2
-                color: Kirigami.Theme.backgroundColor
-                opacity: 0.3
-                z: -1
-            }
+            Rectangle { anchors.fill: parent; radius: 1.5; color: Kirigami.Theme.backgroundColor; opacity: 0.3; z: -1 }
         }
 
         Rectangle {
-            id: bar2
-            width: Math.max(4, iconSize * 0.2)
+            visible: root.showCursor
+            width: Math.max(3, iconSize * 0.15)
             height: iconSize
-            radius: 2
+            radius: 1.5
             color: "transparent"
 
             Rectangle {
                 anchors.bottom: parent.bottom
                 width: parent.width
+                radius: 1.5
                 height: {
-                    var pct = root.currentProvider === "cursor" ? root.cursorOnDemandPercent : root.claudeWeeklyPercent
+                    var pct = root.cursorOnDemandPercent
                     if (root.displayMode === "remaining") pct = 100 - pct
                     return parent.height * Math.max(0, Math.min(100, pct)) / 100
                 }
-                radius: 2
-                color: root.currentProvider === "cursor" ? "#22c55e" : "#f97316"
-
-                Behavior on height { NumberAnimation { duration: 400; easing.type: Easing.InOutQuad } }
+                color: "#22c55e"
+                Behavior on height { NumberAnimation { duration: 400 } }
             }
+            Rectangle { anchors.fill: parent; radius: 1.5; color: Kirigami.Theme.backgroundColor; opacity: 0.3; z: -1 }
+        }
+
+        // Small gap between providers
+        Item {
+            visible: root.showCursor && root.showClaude
+            width: 2
+            height: 1
+        }
+
+        // Claude bars
+        Rectangle {
+            visible: root.showClaude
+            width: Math.max(3, iconSize * 0.15)
+            height: iconSize
+            radius: 1.5
+            color: "transparent"
 
             Rectangle {
-                anchors.fill: parent
-                radius: 2
-                color: Kirigami.Theme.backgroundColor
-                opacity: 0.3
-                z: -1
+                anchors.bottom: parent.bottom
+                width: parent.width
+                radius: 1.5
+                height: {
+                    var pct = root.claudeSessionPercent
+                    if (root.displayMode === "remaining") pct = 100 - pct
+                    return parent.height * Math.max(0, Math.min(100, pct)) / 100
+                }
+                color: "#facc15"
+                Behavior on height { NumberAnimation { duration: 400 } }
             }
+            Rectangle { anchors.fill: parent; radius: 1.5; color: Kirigami.Theme.backgroundColor; opacity: 0.3; z: -1 }
+        }
+
+        Rectangle {
+            visible: root.showClaude
+            width: Math.max(3, iconSize * 0.15)
+            height: iconSize
+            radius: 1.5
+            color: "transparent"
+
+            Rectangle {
+                anchors.bottom: parent.bottom
+                width: parent.width
+                radius: 1.5
+                height: {
+                    var pct = root.claudeWeeklyPercent
+                    if (root.displayMode === "remaining") pct = 100 - pct
+                    return parent.height * Math.max(0, Math.min(100, pct)) / 100
+                }
+                color: "#f97316"
+                Behavior on height { NumberAnimation { duration: 400 } }
+            }
+            Rectangle { anchors.fill: parent; radius: 1.5; color: Kirigami.Theme.backgroundColor; opacity: 0.3; z: -1 }
         }
     }
 
@@ -85,9 +120,9 @@ MouseArea {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 2
-        width: 6
-        height: 6
-        radius: 3
+        width: 5
+        height: 5
+        radius: 2.5
         color: root.loading ? "#facc15" : "#ef4444"
     }
 }
