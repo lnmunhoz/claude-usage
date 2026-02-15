@@ -139,9 +139,9 @@ PlasmoidItem {
     function buildCmd(provider) {
         var custom = plasmoid.configuration.helperPath
         if (custom && custom.length > 0) {
-            return "python3 '" + custom + "' " + provider
+            return "'" + custom + "' " + provider
         }
-        return "bash -c '\"$HOME/.local/share/token-juice/venv/bin/python\" \"$HOME/.local/share/token-juice/token_juice_helper.py\" " + provider + "'"
+        return "bash -c '\"$HOME/.local/share/token-juice/token-juice-helper\" " + provider + "'"
     }
 
     // ---- Polling ----
