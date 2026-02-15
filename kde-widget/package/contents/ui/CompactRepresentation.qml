@@ -26,6 +26,11 @@ MouseArea {
         return w
     }
 
+    Layout.preferredWidth: implicitWidth
+    Layout.minimumWidth: implicitWidth
+    Layout.maximumWidth: implicitWidth
+    clip: true
+
     hoverEnabled: true
     onClicked: root.expanded = !root.expanded
 
