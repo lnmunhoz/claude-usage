@@ -53,10 +53,16 @@ PlasmoidItem {
     toolTipSubText: {
         if (loading) return "Loading..."
         var lines = []
-        if (showCursor && cursorDataLoaded)
-            lines.push("Cursor: P " + cursorPlanPercent.toFixed(0) + "% D " + cursorOnDemandPercent.toFixed(0) + "%")
-        if (showClaude && claudeDataLoaded)
-            lines.push("Claude: 5h " + claudeSessionPercent.toFixed(0) + "% Wk " + claudeWeeklyPercent.toFixed(0) + "%")
+        if (showCursor && cursorDataLoaded) {
+            var cp = displayMode === "remaining" ? 100 - cursorPlanPercent : cursorPlanPercent
+            var cd = displayMode === "remaining" ? 100 - cursorOnDemandPercent : cursorOnDemandPercent
+            lines.push("Cursor: P " + cp.toFixed(0) + "% D " + cd.toFixed(0) + "%")
+        }
+        if (showClaude && claudeDataLoaded) {
+            var cs = displayMode === "remaining" ? 100 - claudeSessionPercent : claudeSessionPercent
+            var cw = displayMode === "remaining" ? 100 - claudeWeeklyPercent : claudeWeeklyPercent
+            lines.push("Claude: 5h " + cs.toFixed(0) + "% Wk " + cw.toFixed(0) + "%")
+        }
         if (errorMessage) lines.push(errorMessage)
         return lines.join("\n") || "No providers enabled"
     }

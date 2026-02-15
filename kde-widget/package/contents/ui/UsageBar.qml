@@ -115,7 +115,7 @@ ColumnLayout {
     // Percentage text
     Text {
         Layout.alignment: Qt.AlignHCenter
-        text: barRoot.percent.toFixed(0) + "%"
+        text: barRoot.fillPercent.toFixed(0) + "%"
         font.pixelSize: 9
         font.family: "monospace"
         font.bold: true
