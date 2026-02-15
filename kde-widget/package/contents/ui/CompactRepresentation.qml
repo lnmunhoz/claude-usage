@@ -6,18 +6,20 @@ import org.kde.kirigami as Kirigami
 MouseArea {
     id: compactRoot
 
-    readonly property int barHeight: Math.min(height - 4, 24)
     readonly property int barWidth: 5
-    readonly property int iconSz: Math.min(barHeight, 16)
+    readonly property int iconSz: Math.min(height - 4, 16)
 
     hoverEnabled: true
     onClicked: root.expanded = !root.expanded
 
     // Horizontal layout: [icon][bars] [gap] [icon][bars]
     RowLayout {
-        anchors.centerIn: parent
-        height: compactRoot.barHeight
-        spacing: 3
+        anchors.fill: parent
+        anchors.leftMargin: 2
+        anchors.rightMargin: 2
+        anchors.topMargin: 2
+        anchors.bottomMargin: 2
+        spacing: 2
 
         // ---- Cursor group ----
         Image {
@@ -33,8 +35,8 @@ MouseArea {
         // Cursor Plan bar
         Rectangle {
             visible: root.showCursor
-            width: compactRoot.barWidth
-            height: compactRoot.barHeight
+            Layout.preferredWidth: compactRoot.barWidth
+            Layout.fillHeight: true
             radius: 2
             color: "transparent"
 
@@ -56,8 +58,8 @@ MouseArea {
         // Cursor On-Demand bar
         Rectangle {
             visible: root.showCursor
-            width: compactRoot.barWidth
-            height: compactRoot.barHeight
+            Layout.preferredWidth: compactRoot.barWidth
+            Layout.fillHeight: true
             radius: 2
             color: "transparent"
 
@@ -79,8 +81,8 @@ MouseArea {
         // Gap between providers
         Item {
             visible: root.showCursor && root.showClaude
-            width: 4
-            height: 1
+            Layout.preferredWidth: 4
+            Layout.fillHeight: true
         }
 
         // ---- Claude group ----
@@ -97,8 +99,8 @@ MouseArea {
         // Claude 5h bar
         Rectangle {
             visible: root.showClaude
-            width: compactRoot.barWidth
-            height: compactRoot.barHeight
+            Layout.preferredWidth: compactRoot.barWidth
+            Layout.fillHeight: true
             radius: 2
             color: "transparent"
 
@@ -120,8 +122,8 @@ MouseArea {
         // Claude Weekly bar
         Rectangle {
             visible: root.showClaude
-            width: compactRoot.barWidth
-            height: compactRoot.barHeight
+            Layout.preferredWidth: compactRoot.barWidth
+            Layout.fillHeight: true
             radius: 2
             color: "transparent"
 

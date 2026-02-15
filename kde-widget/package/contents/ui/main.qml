@@ -52,13 +52,13 @@ PlasmoidItem {
     toolTipMainText: "Token Juice"
     toolTipSubText: {
         if (loading) return "Loading..."
-        var parts = []
+        var lines = []
         if (showCursor && cursorDataLoaded)
-            parts.push("Cursor: P " + cursorPlanPercent.toFixed(0) + "% D " + cursorOnDemandPercent.toFixed(0) + "%")
+            lines.push("Cursor: P " + cursorPlanPercent.toFixed(0) + "% D " + cursorOnDemandPercent.toFixed(0) + "%")
         if (showClaude && claudeDataLoaded)
-            parts.push("Claude: 5h " + claudeSessionPercent.toFixed(0) + "% Wk " + claudeWeeklyPercent.toFixed(0) + "%")
-        if (errorMessage) parts.push(errorMessage)
-        return parts.join(" | ") || "No providers enabled"
+            lines.push("Claude: 5h " + claudeSessionPercent.toFixed(0) + "% Wk " + claudeWeeklyPercent.toFixed(0) + "%")
+        if (errorMessage) lines.push(errorMessage)
+        return lines.join("\n") || "No providers enabled"
     }
 
     // ---- Executable DataSource ----
