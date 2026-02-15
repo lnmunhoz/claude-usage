@@ -4,6 +4,9 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
+import cursorLogo from "./assets/cursor-logo.svg";
+import claudeLogo from "./assets/claude-logo.svg";
+
 // Poll interval in seconds
 
 const POLL_INTERVAL_SECONDS = 60;
@@ -58,10 +61,10 @@ interface BarConfig {
 }
 
 interface BarViewModel {
+  logo: string; // imported SVG path
   primaryBar: BarConfig | null;
   secondaryBar: BarConfig | null;
   showBothBars: boolean;
-  totalPercent: number | null; // null = don't show total row
   planLabel: string | null; // membership type / plan name
   spendDelta: string | null; // floating cost delta (Cursor only)
 }
@@ -148,22 +151,11 @@ function cursorToViewModel(
 
   const showBothBars = primaryBar != null && secondaryBar != null;
 
-  let totalPercent: number | null = null;
-  if (showBothBars) {
-    const totalUsed =
-      (settings.showPlan ? data.usedUsd : 0) +
-      (settings.showOnDemand ? data.onDemandUsedUsd : 0);
-    const totalLimit =
-      (settings.showPlan ? data.limitUsd : 0) +
-      (settings.showOnDemand ? (data.onDemandLimitUsd ?? 0) : 0);
-    totalPercent = totalLimit > 0 ? (totalUsed / totalLimit) * 100 : 0;
-  }
-
   return {
+    logo: cursorLogo,
     primaryBar,
     secondaryBar,
     showBothBars,
-    totalPercent,
     planLabel: data.membershipType ?? null,
     spendDelta: delta,
   };
@@ -178,22 +170,22 @@ function claudeToViewModel(data: ClaudeUsageData): BarViewModel {
   const weeklyPercent = data.weeklyPercentUsed;
 
   return {
+    logo: claudeLogo,
     primaryBar: {
       percent: sessionPercent,
       fill: clampFill(sessionPercent),
-      label: "S",
+      label: "5h",
       color: getClaudeColor(sessionPercent),
       glow: getClaudeGlow(sessionPercent),
     },
     secondaryBar: {
       percent: weeklyPercent,
       fill: clampFill(weeklyPercent),
-      label: "W",
+      label: "Week",
       color: getClaudeColor(weeklyPercent),
       glow: getClaudeGlow(weeklyPercent),
     },
     showBothBars: true,
-    totalPercent: null, // Claude doesn't show a combined total
     planLabel: data.planType ?? "claude",
     spendDelta: null, // Claude doesn't track dollar spend deltas
   };
@@ -402,6 +394,13 @@ function App() {
         </div>
       ) : vm ? (
         <>
+          <img
+            src={vm.logo}
+            alt=""
+            className="widget-logo"
+            data-tauri-drag-region
+            draggable={false}
+          />
           <div className="bars-row" data-tauri-drag-region>
             {vm.spendDelta && (
               <span
@@ -473,16 +472,6 @@ function App() {
               </div>
             )}
           </div>
-
-          {vm.totalPercent != null && (
-            <div
-              key={`total-${refreshKey}`}
-              className={`total-percent ${bounceClass}`}
-              data-tauri-drag-region
-            >
-              {vm.totalPercent.toFixed(1)}%
-            </div>
-          )}
 
           {vm.planLabel && (
             <div className="plan-label" data-tauri-drag-region>

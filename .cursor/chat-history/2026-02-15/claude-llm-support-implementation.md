@@ -5108,3 +5108,755 @@ All three tasks are complete. Here's what was done:
 
 The fetch logic remains provider-aware (it has to call different Tauri commands), but that branching is cleanly isolated in `fetchUsage`. Adding a third provider in the future would only require a new adapter function and a few lines in the fetch callback — the rendering code wouldn't need to change at all.
 
+### **User**
+
+Okay, so I want to display the actual logo of cursor and claude on top of their widgets, their respective widgets. Let's find online their logo in a png version, like, or svg, and then we display on top of the progress bars.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] The user wants to display the Cursor and Claude logos on top of their respective widgets. Let me first look at the current app structure to understand the layout, and then find the logos online.
+
+Let me explore the current UI structure and find appropriate logos.
+Let me look at the current widget layout and CSS to understand how to position the logos, and also check what assets already exist.
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+[Tool: Glob]
+  glob_pattern: **/*.{png,svg,ico}
+  target_directory: /Users/lnmunhoz/projects/cursor-juice
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  limit: 30
+  offset: 276
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] Let me check the widget dimensions and the public/assets folder structure to understand where to place the logos.
+Let me check the window dimensions and the project's asset structure.
+[Tool: Grep]
+  pattern: width|height|size
+  path: /Users/lnmunhoz/projects/cursor-juice/src-tauri
+  glob: *.json
+[Tool: Glob]
+  glob_pattern: **/public/**
+  target_directory: /Users/lnmunhoz/projects/cursor-juice
+[Tool: Glob]
+  glob_pattern: **/assets/**
+  target_directory: /Users/lnmunhoz/projects/cursor-juice
+[Tool: Grep]
+  pattern: width|height|PhysicalSize|LogicalSize
+  path: /Users/lnmunhoz/projects/cursor-juice/src-tauri/src/lib.rs
+  head_limit: 20
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: Glob]
+  glob_pattern: src/assets/**
+  target_directory: /Users/lnmunhoz/projects/cursor-juice
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src-tauri/tauri.conf.json
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] Good, now I have a clear picture. The widget is 70px wide and 400px tall, with padding `40px 6px 20px 6px`. The logos need to be very small (maybe 16-20px) to fit at the top of this narrow widget.
+
+There are no existing image assets in the project. I need to:
+1. Find/create SVG logos for Cursor and Claude
+2. Place them at the top of the widget
+
+For such small widgets, inline SVGs would be the cleanest approach since:
+- No external file dependencies
+- Scale perfectly
+- Can be styled/colored easily
+- No network requests
+
+
+The user specifically wants actual image files rather than inline SVGs, so I should look for the official logos from Cursor and Anthropic's websites or GitHub repositories, then download them as assets for the project. I'm realizing the logo should sit in that top padding area of the widget, kept small and subtle to fit the design. The cleanest approach is to add a `logoSrc` field to the `BarViewModel` so each adapter can provide its own logo path, keeping the JSX clean and the data model responsible for the logo reference.
+Now I have a clear picture. The widget is 70x400px with 40px top padding (already reserved space at the top). There are no existing image assets in the project. Let me create a plan.
+[Tool: CreatePlan]
+  name: Add provider logos
+  overview: Add Cursor and Claude SVG logos to the top of their respective widgets, extending the BarViewModel adapter pattern so no provider-specific branching is needed in JSX.
+  plan: # Add Provider Logos to Widgets
+
+## Context
+
+The widget is 70px wide x 400px tall. The `.widget` class already has `padding: 40px 6px 20px 6px` -- the 40px top padding provides natural space for a small logo above the bars. There are currently no image assets in the project (`src/assets/` does not exist).
+
+## Approach
+
+Use inline SVG files saved to `src/assets/` and imported into the React app. SVGs are ideal here because:
+- They scale crisply at the tiny ~20px display size
+- No network requests or external dependencies
+- Work perfectly with Vite's asset pipeline (`import logo from "./assets/cursor.svg"`)
+
+### 1. Add SVG logo files
+
+- `src/assets/cursor-logo.svg` -- Cursor's logo (the stylized cursor arrow icon)
+- `src/assets/claude-logo.svg` -- Claude/Anthropic's logo (the sparkle/asterisk mark)
+
+Both will be sourced from their official branding or press resources. Simple monochrome/white versions work best against the transparent dark widget background.
+
+### 2. Extend `BarViewModel` with a logo field
+
+In [src/App.tsx](src/App.tsx), add a `logo` field to the `BarViewModel` interface:
+
+```typescript
+interface BarViewModel {
+  logo: string;  // imported SVG path
+  // ... existing fields
+}
+```
+
+Each adapter function provides the correct logo:
+- `cursorToViewModel()` returns the Cursor logo import
+- `claudeToViewModel()` returns the Claude logo import
+
+### 3. Render the logo in JSX
+
+Add an `<img>` element at the top of the widget (before `bars-row`), consuming `vm.logo`. Approximately 20px wide, centered, with slight opacity to match the glassy aesthetic. No provider checks needed.
+
+### 4. Add CSS for the logo
+
+Add a `.widget-logo` class in [src/App.css](src/App.css) for sizing and positioning within the existing 40px top padding area.
+
+### Files changed
+
+- **New**: `src/assets/cursor-logo.svg`, `src/assets/claude-logo.svg`
+- **Edit**: [src/App.tsx](src/App.tsx) -- imports, BarViewModel, adapters, render
+- **Edit**: [src/App.css](src/App.css) -- `.widget-logo` class
+
+  todos: [{"id":"add-svgs","content":"Download/create Cursor and Claude SVG logos and save to src/assets/"},{"id":"extend-viewmodel","content":"Add logo field to BarViewModel and wire it through both adapter functions"},{"id":"render-logo","content":"Add logo img element to JSX and CSS styling"}]
+
+### **User**
+
+1|# Add Provider Logos to Widgets
+     2|
+     3|## Context
+     4|
+     5|The widget is 70px wide x 400px tall. The `.widget` class already has `padding: 40px 6px 20px 6px` -- the 40px top padding provides natural space for a small logo above the bars. There are currently no image assets in the project (`src/assets/` does not exist).
+     6|
+     7|## Approach
+     8|
+     9|Use inline SVG files saved to `src/assets/` and imported into the React app. SVGs are ideal here because:
+    10|
+    11|- They scale crisply at the tiny ~20px display size
+    12|- No network requests or external dependencies
+    13|- Work perfectly with Vite's asset pipeline (`import logo from "./assets/cursor.svg"`)
+    14|
+    15|### 1. Add SVG logo files
+    16|
+    17|- `src/assets/cursor-logo.svg` -- Cursor's logo (the stylized cursor arrow icon)
+    18|- `src/assets/claude-logo.svg` -- Claude/Anthropic's logo (the sparkle/asterisk mark)
+    19|
+    20|Both will be sourced from their official branding or press resources. Simple monochrome/white versions work best against the transparent dark widget background.
+    21|
+    22|### 2. Extend `BarViewModel` with a logo field
+    23|
+    24|In [src/App.tsx](src/App.tsx), add a `logo` field to the `BarViewModel` interface:
+    25|
+    26|```typescript
+    27|interface BarViewModel {
+    28|  logo: string; // imported SVG path
+    29|  // ... existing fields
+    30|}
+    31|```
+    32|
+    33|Each adapter function provides the correct logo:
+    34|
+    35|- `cursorToViewModel()` returns the Cursor logo import
+    36|- `claudeToViewModel()` returns the Claude logo import
+    37|
+    38|### 3. Render the logo in JSX
+    39|
+    40|Add an `<img>` element at the top of the widget (before `bars-row`), consuming `vm.logo`. Approximately 20px wide, centered, with slight opacity to match the glassy aesthetic. No provider checks needed.
+    41|
+    42|### 4. Add CSS for the logo
+    43|
+    44|Add a `.widget-logo` class in [src/App.css](src/App.css) for sizing and positioning within the existing 40px top padding area.
+    45|
+    46|### Files changed
+    47|
+    48|- **New**: `src/assets/cursor-logo.svg`, `src/assets/claude-logo.svg`
+    49|- **Edit**: [src/App.tsx](src/App.tsx) -- imports, BarViewModel, adapters, render
+    50|- **Edit**: [src/App.css](src/App.css) -- `.widget-logo` class
+    51|
+
+
+
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] Let me implement the plan step by step. First, I need to find/create the SVG logos for Cursor and Claude, then extend the BarViewModel, and finally render them.
+
+Let me start by finding the logos online.
+[Tool: TodoWrite]
+  merge: true
+  todos: [{"id":"add-svgs","content":"Download/create Cursor and Claude SVG logos and save to src/assets/","status":"in_progress"},{"id":"extend-viewmodel","content":"Add logo field to BarViewModel and wire it through both adapter functions","status":"pending"},{"id":"render-logo","content":"Add logo img element to JSX and CSS styling","status":"pending"}]
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Let me find official logos for both Cursor and Claude.
+[Tool: WebSearch]
+  search_term: Cursor IDE logo SVG official branding
+  explanation: Finding the official Cursor logo SVG to use in the widget.
+[Tool: WebSearch]
+  search_term: Claude AI Anthropic logo SVG official
+  explanation: Finding the official Claude/Anthropic logo SVG to use in the widget.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: WebFetch]
+  url: https://upload.wikimedia.org/wikipedia/commons/8/8a/Claude_AI_logo.svg
+[Tool: WebFetch]
+  url: https://en.wikipedia.org/wiki/File:Cursor_logo.svg
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] The Wikipedia logos are full wordmarks (text logos) which won't work well in a 70px wide widget. I need the icon/symbol versions - just the Cursor cube icon and the Claude sparkle/asterisk mark. Let me search for those specifically, or I can create simple SVGs based on well-known versions of these logos.
+
+Actually, for this tiny 70px-wide widget, I should use:
+- **Cursor**: The simple cube/arrow icon (not the full wordmark)
+- **Claude**: The sparkle/asterisk symbol (not the full wordmark)
+
+Let me try to find the icon versions. The Cursor brand page at cursor.com/brand should have the standalone cube. And for Claude, the sparkle mark is well-known.
+
+
+I'll create clean SVGs for both logos since I know their general appearance - the Cursor cube as an isometric shape and the Claude sparkle as a stylized asterisk or starburst pattern.
+The Wikipedia logos are full wordmarks -- too wide for a 70px widget. I need the standalone icon marks. Let me find those.
+[Tool: WebSearch]
+  search_term: Cursor IDE icon cube SVG symbol mark standalone
+  explanation: Finding the standalone Cursor cube icon (not the wordmark) for the tiny widget.
+[Tool: WebSearch]
+  search_term: Claude AI sparkle icon SVG symbol mark anthropic favicon
+  explanation: Finding the standalone Claude sparkle/asterisk icon (not the wordmark).
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+There's a standalone Claude AI symbol SVG on Wikipedia. Let me fetch both the Claude symbol and look at the Bootstrap Icons version.
+[Tool: WebFetch]
+  url: https://en.wikipedia.org/wiki/File:Claude_AI_symbol.svg
+[Tool: WebFetch]
+  url: https://icons.getbootstrap.com/icons/claude/
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] I found the Bootstrap Icons Claude SVG. Let me download the actual SVG content. And for Cursor, let me try to find a clean icon version. Let me try to access the SVG files directly.
+Let me download the actual SVG files.
+[Tool: WebFetch]
+  url: https://icons.getbootstrap.com/assets/icons/claude.svg
+[Tool: WebFetch]
+  url: https://upload.wikimedia.org/wikipedia/commons/b/b0/Claude_AI_symbol.svg
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] The direct SVG downloads are failing. Let me try the freelogovectors.net Cursor page and the lobehub icons page to find alternate sources, or let me try downloading from other sources.
+
+Actually, I know what these logos look like, and for this tiny widget (70px wide, 20px logo), I can create clean SVG icons:
+
+1. **Cursor logo**: The Cursor icon is a stylized cube/diamond shape. It's an isometric cube view. Looking at the brand page, they have a "cube" variant. The Cursor logo icon is a tilted square/diamond shape that represents a cursor/code concept.
+
+
+2. **Claude logo**: The Claude symbol is the distinctive sparkle/starburst pattern. It's like a snowflake or asterisk with rounded tips. Let me try pulling the actual SVGs from different sources instead.
+Let me try to grab the SVGs from alternative sources.
+[Tool: WebFetch]
+  url: https://lobehub.com/icons/cursor
+[Tool: WebFetch]
+  url: https://freelogovectors.net/cursor-logo-icon-code-editor
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] The fetching isn't getting me the actual SVG content. Let me try using curl to download the SVGs from Wikimedia Commons and Bootstrap Icons directly in the shell.
+Let me try downloading the SVGs via curl directly.
+[Tool: Shell]
+  command: mkdir -p /Users/lnmunhoz/projects/cursor-juice/src/assets
+  description: Create assets directory
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: Shell]
+  command: curl -sL "https://upload.wikimedia.org/wikipedia/commons/b/b0/Claude_AI_symbol.svg" -o /tmp/claude_symbol.svg && head -50 /tmp/claude_symbol.svg
+  description: Download Claude symbol SVG
+[Tool: Shell]
+  command: curl -sL "https://icons.getbootstrap.com/assets/icons/claude.svg" -o /tmp/claude_bootstrap.svg && head -20 /tmp/claude_bootstrap.svg
+  description: Download Claude Bootstrap icon SVG
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Got the Claude SVGs. Now let me find the Cursor icon. Let me check the Cursor brand page and look for their cube icon.
+[Tool: Shell]
+  command: curl -sL "https://cursor.com/brand" -o /tmp/cursor_brand.html && rg -o 'src="[^"]*\.(svg|png)"' /tmp/cursor_brand.html | head -20
+  description: Find Cursor brand asset URLs
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: Shell]
+  command: curl -sL "https://cursor.com/brand" -o /tmp/cursor_brand.html && grep -oE 'src="[^"]*\.(svg|png)"' /tmp/cursor_brand.html | head -30
+  description: Find Cursor brand image URLs
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: Shell]
+  command: grep -oE 'src="[^"]*\.(svg|png)"' /tmp/cursor_brand.html | sort -u
+  description: Get unique brand asset URLs
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: Shell]
+  command: for i in 7 8 9 10; do echo "=== brand-logo-$i ===" && curl -sL "https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/brand/brand-logo-$i.svg" | head -5; done
+  description: Download Cursor brand logo variants
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] I can see the Cursor brand logos. The key icon element is inside all of them - it's the hexagonal/cube shape with a distinctive geometric pattern inside. Let me extract just the icon portion. Looking at brand-logo-9, the icon itself is at offset 600,300 in a 400x400 area.
+
+Let me create clean, standalone SVGs for both logos:
+
+1. **Cursor**: Extract the inner cube/hexagon icon from brand-logo-9 (the geometric shape with the path inside). I'll need to normalize the coordinates.
+
+2. **Claude**: I already have the symbol from Wikimedia (the sparkle/starburst) and the Bootstrap Icons version.
+
+
+For the widget at 70px wide, I need small icons around 20px in white or light colors to work against the dark background. Looking at the Cursor icon more carefully, it's composed of an outer hexagonal cube shape with an inner geometric pattern forming a triangle or arrow, and I'm extracting the actual path data from brand-logo-9 to recreate it at the right scale.
+
+Tracing through the SVG path coordinates...
+
+I need to recenter these coordinates so the shape sits at the origin. The viewBox spans roughly 238 units horizontally and 268 vertically, so I'll calculate the midpoint and shift all coordinates accordingly. For the Cursor icon, I'm pulling the path from the dark background version and setting it up with a white fill so it renders properly. I'm realizing the path structure uses a combined shape with a cutout—the hexagon has a geometric hole that forms the arrow pattern. For the Cursor icon, I'll extract the path from the source and set the fill to white with the right viewBox. For Claude, I'll use the Bootstrap Icons version and swap the fill color to white instead of currentColor.
+I have both SVG sources. Now let me create clean, white-fill standalone SVGs optimized for the small widget.
+[Tool: Write]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/assets/cursor-logo.svg
+  contents: <svg xmlns="http://www.w3.org/2000/svg" viewBox="681 366 238 268" fill="none">
+  <path fill="white" d="M914.009 428.708L805.624 366.13C802.142 364.121 797.847 364.121 794.37 366.13L685.99 428.708C683.066 430.395 681.261 433.523 681.261 436.903V563.087C681.261 566.472 683.066 569.595 685.99 571.282L794.376 633.86C797.857 635.869 802.153 635.869 805.629 633.86L914.015 571.282C916.939 569.595 918.744 566.467 918.744 563.087V436.903C918.744 433.518 916.939 430.395 914.015 428.708H914.009ZM907.201 441.964L802.571 623.19C801.864 624.412 799.995 623.914 799.995 622.5V503.835C799.995 501.463 798.725 499.272 796.674 498.083L693.907 438.751C692.686 438.044 693.184 436.174 694.598 436.174H903.864C906.837 436.174 908.696 439.393 907.207 441.97L907.201 441.964Z"/>
+</svg>
+
+[Tool: Write]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/assets/claude-logo.svg
+  contents: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="white">
+  <path d="m3.127 10.604 3.135-1.76.053-.153-.053-.085H6.11l-.525-.032-1.791-.048-1.554-.065-1.505-.08-.38-.081L0 7.832l.036-.234.32-.214.455.04 1.009.069 1.513.105 1.097.064 1.626.17h.259l.036-.105-.089-.065-.068-.064-1.566-1.062-1.695-1.121-.887-.646-.48-.327-.243-.306-.104-.67.435-.48.585.04.15.04.593.456 1.267.981 1.654 1.218.242.202.097-.068.012-.049-.109-.181-.9-1.626-.96-1.655-.428-.686-.113-.411a2 2 0 0 1-.068-.484l.496-.674L4.446 0l.662.089.279.242.411.94.666 1.48 1.033 2.014.302.597.162.553.06.17h.105v-.097l.085-1.134.157-1.392.154-1.792.052-.504.25-.605.497-.327.387.186.319.456-.045.294-.19 1.23-.37 1.93-.243 1.29h.142l.161-.16.654-.868 1.097-1.372.484-.545.565-.601.363-.287h.686l.505.751-.226.775-.707.895-.585.759-.839 1.13-.524.904.048.072.125-.012 1.897-.403 1.024-.186 1.223-.21.553.258.06.263-.218.536-1.307.323-1.533.307-2.284.54-.028.02.032.04 1.029.098.44.024h1.077l2.005.15.525.346.315.424-.053.323-.807.411-3.631-.863-.872-.218h-.12v.073l.726.71 1.331 1.202 1.667 1.55.084.383-.214.302-.226-.032-1.464-1.101-.565-.497-1.28-1.077h-.084v.113l.295.432 1.557 2.34.08.718-.112.234-.404.141-.444-.08-.911-1.28-.94-1.44-.759-1.291-.093.053-.448 4.821-.21.246-.484.186-.403-.307-.214-.496.214-.98.258-1.28.21-1.016.19-1.263.112-.42-.008-.028-.092.012-.953 1.307-1.448 1.957-1.146 1.227-.274.109-.477-.247.045-.44.266-.39 1.586-2.018.956-1.25.617-.723-.004-.105h-.036l-4.212 2.736-.75.096-.324-.302.04-.496.154-.162 1.267-.871z"/>
+</svg>
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: TodoWrite]
+  merge: true
+  todos: [{"id":"add-svgs","content":"Download/create Cursor and Claude SVG logos and save to src/assets/","status":"completed"},{"id":"extend-viewmodel","content":"Add logo field to BarViewModel and wire it through both adapter functions","status":"in_progress"}]
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now let me read the current `App.tsx` to make the edits.
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now I'll add the logo imports, extend the `BarViewModel` with a `logo` field, wire it through both adapters, and add the logo element to the JSX.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string: import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import "./App.css";
+  new_string: import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import "./App.css";
+
+import cursorLogo from "./assets/cursor-logo.svg";
+import claudeLogo from "./assets/claude-logo.svg";
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string: interface BarViewModel {
+  primaryBar: BarConfig | null;
+  secondaryBar: BarConfig | null;
+  showBothBars: boolean;
+  totalPercent: number | null; // null = don't show total row
+  planLabel: string | null; // membership type / plan name
+  spendDelta: string | null; // floating cost delta (Cursor only)
+}
+  new_string: interface BarViewModel {
+  logo: string; // imported SVG path
+  primaryBar: BarConfig | null;
+  secondaryBar: BarConfig | null;
+  showBothBars: boolean;
+  totalPercent: number | null; // null = don't show total row
+  planLabel: string | null; // membership type / plan name
+  spendDelta: string | null; // floating cost delta (Cursor only)
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now wire the logo through both adapter functions.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:   return {
+    primaryBar,
+    secondaryBar,
+    showBothBars,
+    totalPercent,
+    planLabel: data.membershipType ?? null,
+    spendDelta: delta,
+  };
+}
+  new_string:   return {
+    logo: cursorLogo,
+    primaryBar,
+    secondaryBar,
+    showBothBars,
+    totalPercent,
+    planLabel: data.membershipType ?? null,
+    spendDelta: delta,
+  };
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:   return {
+    primaryBar: {
+      percent: sessionPercent,
+      fill: clampFill(sessionPercent),
+      label: "5h",
+      color: getClaudeColor(sessionPercent),
+      glow: getClaudeGlow(sessionPercent),
+    },
+    secondaryBar: {
+      percent: weeklyPercent,
+      fill: clampFill(weeklyPercent),
+      label: "Week",
+      color: getClaudeColor(weeklyPercent),
+      glow: getClaudeGlow(weeklyPercent),
+    },
+    showBothBars: true,
+    totalPercent: null, // Claude doesn't show a combined total
+    planLabel: data.planType ?? "claude",
+    spendDelta: null, // Claude doesn't track dollar spend deltas
+  };
+}
+  new_string:   return {
+    logo: claudeLogo,
+    primaryBar: {
+      percent: sessionPercent,
+      fill: clampFill(sessionPercent),
+      label: "5h",
+      color: getClaudeColor(sessionPercent),
+      glow: getClaudeGlow(sessionPercent),
+    },
+    secondaryBar: {
+      percent: weeklyPercent,
+      fill: clampFill(weeklyPercent),
+      label: "Week",
+      color: getClaudeColor(weeklyPercent),
+      glow: getClaudeGlow(weeklyPercent),
+    },
+    showBothBars: true,
+    totalPercent: null, // Claude doesn't show a combined total
+    planLabel: data.planType ?? "claude",
+    spendDelta: null, // Claude doesn't track dollar spend deltas
+  };
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: TodoWrite]
+  merge: true
+  todos: [{"id":"extend-viewmodel","content":"Add logo field to BarViewModel and wire it through both adapter functions","status":"completed"},{"id":"render-logo","content":"Add logo img element to JSX and CSS styling","status":"in_progress"}]
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now add the logo `<img>` element to the JSX, right before `bars-row`.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:       ) : vm ? (
+        <>
+          <div className="bars-row" data-tauri-drag-region>
+  new_string:       ) : vm ? (
+        <>
+          <img
+            src={vm.logo}
+            alt=""
+            className="widget-logo"
+            data-tauri-drag-region
+            draggable={false}
+          />
+          <div className="bars-row" data-tauri-drag-region>
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now add the CSS for `.widget-logo`. I'll place it right after the `.widget:active` rule and before `.bars-row`.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  old_string: /* Two bars side by side */
+.bars-row {
+  new_string: /* Provider logo at the top of the widget */
+.widget-logo {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  opacity: 0.85;
+  pointer-events: none;
+  flex-shrink: 0;
+  margin-bottom: 2px;
+}
+
+/* Two bars side by side */
+.bars-row {
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now let me also reduce the top padding on `.widget` since the logo will now occupy that space more meaningfully, and we want the logo to sit nicely at the top.
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  limit: 35
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+The 40px top padding was already there for spacing. With the logo now occupying that space, let me reduce it slightly so the logo sits at the top naturally.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  old_string:   padding: 40px 6px 20px 6px;
+  new_string:   padding: 12px 6px 20px 6px;
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now let me verify everything compiles correctly.
+[Tool: Shell]
+  command: cd /Users/lnmunhoz/projects/cursor-juice && pnpm exec tsc --noEmit 2>&1
+  description: TypeScript type-check without emitting
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: ReadLints]
+  paths: ["/Users/lnmunhoz/projects/cursor-juice/src/App.tsx","/Users/lnmunhoz/projects/cursor-juice/src/App.css"]
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: TodoWrite]
+  merge: true
+  todos: [{"id":"render-logo","content":"Add logo img element to JSX and CSS styling","status":"completed"}]
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+All three tasks are complete. Here's a summary of what was done:
+
+**1. Added SVG logo files**
+- `src/assets/cursor-logo.svg` -- The official Cursor cube/hexagon icon (extracted from Cursor's brand assets at cursor.com/brand), rendered in white fill
+- `src/assets/claude-logo.svg` -- The official Claude sparkle symbol (from Bootstrap Icons / Anthropic branding), rendered in white fill
+
+Both are monochrome white SVGs that look crisp at small sizes against the dark/transparent widget background.
+
+**2. Extended BarViewModel with `logo` field**
+- Added `logo: string` to the `BarViewModel` interface
+- `cursorToViewModel()` returns the imported Cursor logo path
+- `claudeToViewModel()` returns the imported Claude logo path
+
+No provider-specific checks needed in JSX -- the adapter handles it.
+
+**3. Rendered the logo in the widget**
+- Added an `<img>` element at the top of the widget (before `bars-row`), consuming `vm.logo`
+- Added `.widget-logo` CSS class: 20x20px, 85% opacity, centered, `pointer-events: none` so it doesn't interfere with dragging
+- Reduced widget top padding from 40px to 12px since the logo now lives in that space naturally
+
+### **User**
+
+From the cursor bar, let's remove the total percent showing also because I think we don't really need it. We just need the individual bars.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: CreatePlan]
+  name: Remove total percent
+  overview: Remove the combined total percentage row from the Cursor widget by eliminating `totalPercent` from the view model and the JSX that renders it.
+  plan: # Remove Total Percent from Cursor Widget
+
+Small change across one file: [src/App.tsx](src/App.tsx).
+
+### Changes
+
+- **`cursorToViewModel`**: Remove the `totalPercent` computation block (lines ~153-161). Always return `totalPercent: null`.
+- **`BarViewModel` interface**: Remove the `totalPercent` field entirely since neither provider uses it anymore.
+- **JSX render section**: Remove the `vm.totalPercent != null` block (~lines 490-498) that renders the `.total-percent` div.
+- **Optionally**: Remove the `.total-percent` CSS class from [src/App.css](src/App.css) since nothing references it anymore.
+
+  todos: [{"id":"remove-total","content":"Remove totalPercent from BarViewModel, both adapters, and the JSX render block"}]
+
+### **User**
+
+1|# Remove Total Percent from Cursor Widget
+     2|
+     3|Small change across one file: [src/App.tsx](src/App.tsx).
+     4|
+     5|### Changes
+     6|
+     7|- **`cursorToViewModel`**: Remove the `totalPercent` computation block (lines ~153-161). Always return `totalPercent: null`.
+     8|- **`BarViewModel` interface**: Remove the `totalPercent` field entirely since neither provider uses it anymore.
+     9|- **JSX render section**: Remove the `vm.totalPercent != null` block (~lines 490-498) that renders the `.total-percent` div.
+    10|- **Optionally**: Remove the `.total-percent` CSS class from [src/App.css](src/App.css) since nothing references it anymore.
+    11|
+
+
+
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: TodoWrite]
+  merge: true
+  todos: [{"id":"remove-total","content":"Remove totalPercent from BarViewModel, both adapters, and the JSX render block","status":"in_progress"}]
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+I'll make all four changes now: remove `totalPercent` from the interface, the Cursor adapter computation, the Claude adapter line, and the JSX render block. I'll also clean up the CSS.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string: interface BarViewModel {
+  logo: string; // imported SVG path
+  primaryBar: BarConfig | null;
+  secondaryBar: BarConfig | null;
+  showBothBars: boolean;
+  totalPercent: number | null; // null = don't show total row
+  planLabel: string | null; // membership type / plan name
+  spendDelta: string | null; // floating cost delta (Cursor only)
+}
+  new_string: interface BarViewModel {
+  logo: string; // imported SVG path
+  primaryBar: BarConfig | null;
+  secondaryBar: BarConfig | null;
+  showBothBars: boolean;
+  planLabel: string | null; // membership type / plan name
+  spendDelta: string | null; // floating cost delta (Cursor only)
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:   const showBothBars = primaryBar != null && secondaryBar != null;
+
+  let totalPercent: number | null = null;
+  if (showBothBars) {
+    const totalUsed =
+      (settings.showPlan ? data.usedUsd : 0) +
+      (settings.showOnDemand ? data.onDemandUsedUsd : 0);
+    const totalLimit =
+      (settings.showPlan ? data.limitUsd : 0) +
+      (settings.showOnDemand ? (data.onDemandLimitUsd ?? 0) : 0);
+    totalPercent = totalLimit > 0 ? (totalUsed / totalLimit) * 100 : 0;
+  }
+
+  return {
+    logo: cursorLogo,
+    primaryBar,
+    secondaryBar,
+    showBothBars,
+    totalPercent,
+    planLabel: data.membershipType ?? null,
+    spendDelta: delta,
+  };
+  new_string:   const showBothBars = primaryBar != null && secondaryBar != null;
+
+  return {
+    logo: cursorLogo,
+    primaryBar,
+    secondaryBar,
+    showBothBars,
+    planLabel: data.membershipType ?? null,
+    spendDelta: delta,
+  };
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:     showBothBars: true,
+    totalPercent: null, // Claude doesn't show a combined total
+    planLabel: data.planType ?? "claude",
+  new_string:     showBothBars: true,
+    planLabel: data.planType ?? "claude",
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:           {vm.totalPercent != null && (
+            <div
+              key={`total-${refreshKey}`}
+              className={`total-percent ${bounceClass}`}
+              data-tauri-drag-region
+            >
+              {vm.totalPercent.toFixed(1)}%
+            </div>
+          )}
+
+          {vm.planLabel && (
+  new_string:           {vm.planLabel && (
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now remove the unused `.total-percent` CSS class.
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  offset: 254
+  limit: 20
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  old_string: /* Total percent label below bars */
+.total-percent {
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 1);
+  text-align: center;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  transition: transform 0.3s ease;
+}
+
+.total-percent.bounce {
+  animation: label-bounce 0.4s ease-out;
+}
+
+/* Plan label */
+  new_string: /* Plan label */
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: Shell]
+  command: cd /Users/lnmunhoz/projects/cursor-juice && pnpm exec tsc --noEmit 2>&1
+  description: TypeScript type-check
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: TodoWrite]
+  merge: true
+  todos: [{"id":"remove-total","content":"Remove totalPercent from BarViewModel, both adapters, and the JSX render block","status":"completed"}]
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Done. Here's what was removed:
+
+- **`BarViewModel` interface** -- removed the `totalPercent` field entirely
+- **`cursorToViewModel`** -- removed the 9-line computation block that calculated combined usage across plan + on-demand
+- **`claudeToViewModel`** -- removed the `totalPercent: null` line
+- **JSX** -- removed the `vm.totalPercent != null` render block (the `.total-percent` div)
+- **CSS** -- removed the `.total-percent` and `.total-percent.bounce` rules since nothing references them anymore
+
+TypeScript passes cleanly.
+

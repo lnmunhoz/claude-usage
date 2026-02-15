@@ -20,7 +20,7 @@ body,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px 6px 20px 6px;
+  padding: 12px 6px 20px 6px;
   background: transparent;
   border-radius: 16px;
   border: 1px solid transparent;
@@ -39,6 +39,17 @@ body,
 
 .widget:active {
   cursor: grabbing;
+}
+
+/* Provider logo at the top of the widget */
+.widget-logo {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  opacity: 0.85;
+  pointer-events: none;
+  flex-shrink: 0;
+  margin-bottom: 2px;
 }
 
 /* Two bars side by side */
@@ -240,22 +251,6 @@ body,
     opacity: 0;
     top: -40px;
   }
-}
-
-/* Total percent label below bars */
-.total-percent {
-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
-  font-size: 13px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 1);
-  text-align: center;
-  line-height: 1;
-  letter-spacing: -0.03em;
-  transition: transform 0.3s ease;
-}
-
-.total-percent.bounce {
-  animation: label-bounce 0.4s ease-out;
 }
 
 /* Plan label */
