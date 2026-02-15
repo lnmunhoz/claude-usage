@@ -1,0 +1,22 @@
+{
+    "KPlugin": {
+        "Id": "com.tokenjuice.plasmoid",
+        "Name": "Token Juice",
+        "Description": "Monitor Cursor and Claude AI token usage",
+        "Icon": "preferences-desktop-color",
+        "Authors": [
+            {
+                "Name": "Token Juice Contributors",
+                "Email": ""
+            }
+        ],
+        "Category": "Online Services",
+        "License": "MIT",
+        "Version": "1.0.0",
+        "Website": "https://github.com/lnmunhoz/TokenJuice"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API": "declarativeappletscript",
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-MainScript": "ui/main.qml"
+}
