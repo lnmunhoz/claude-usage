@@ -46,13 +46,19 @@ PlasmoidItem {
     }
 
     // ---- Helper path resolution ----
-    function helperScript() {
+    function installDir() {
+        var home = StandardPaths.writableLocation(StandardPaths.HomeLocation)
+        return home + "/.local/share/token-juice"
+    }
+
+    function helperCommand() {
         var custom = plasmoid.configuration.helperPath
         if (custom && custom.length > 0) {
-            return custom
+            return "python3 '" + custom + "'"
         }
-        var home = StandardPaths.writableLocation(StandardPaths.HomeLocation)
-        return home + "/.local/share/token-juice/token_juice_helper.py"
+        // Use the venv Python created by install.sh
+        var base = installDir()
+        return "'" + base + "/venv/bin/python' '" + base + "/token_juice_helper.py'"
     }
 
     // ---- Executable DataSource ----
@@ -116,7 +122,7 @@ PlasmoidItem {
     // ---- Polling ----
     function fetchUsage() {
         root.loading = true
-        var cmd = "python3 '" + helperScript() + "' " + root.currentProvider
+        var cmd = helperCommand() + " " + root.currentProvider
         executable.exec(cmd)
     }
 
