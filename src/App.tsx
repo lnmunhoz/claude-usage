@@ -7,10 +7,6 @@ import "./App.css";
 import cursorLogo from "./assets/cursor-logo.svg";
 import claudeLogo from "./assets/claude-logo.svg";
 
-// Poll interval in seconds
-
-const POLL_INTERVAL_SECONDS = 60;
-
 // Test mode: simulates a fake spend delta on every poll to test animations
 const TEST_MODE = false;
 const FAKE_DELTA_USD = 1.5;
@@ -49,6 +45,7 @@ interface Settings {
   showPlan: boolean;
   showOnDemand: boolean;
   displayMode: DisplayMode;
+  pollIntervalSeconds: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,10 +220,76 @@ function claudeToViewModel(
 }
 
 // ---------------------------------------------------------------------------
+// Settings view — rendered when window label is "settings"
+// ---------------------------------------------------------------------------
+
+function SettingsView() {
+  const [value, setValue] = useState(60);
+  const [unit, setUnit] = useState<"seconds" | "minutes" | "hours">("seconds");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    invoke<Settings>("get_settings").then((s) => {
+      const totalSeconds = s.pollIntervalSeconds ?? 60;
+      if (totalSeconds >= 3600 && totalSeconds % 3600 === 0) {
+        setValue(totalSeconds / 3600);
+        setUnit("hours");
+      } else if (totalSeconds >= 60 && totalSeconds % 60 === 0) {
+        setValue(totalSeconds / 60);
+        setUnit("minutes");
+      } else {
+        setValue(totalSeconds);
+        setUnit("seconds");
+      }
+      setLoaded(true);
+    });
+  }, []);
+
+  const handleSave = async () => {
+    await invoke("save_poll_interval", {
+      intervalValue: value,
+      intervalUnit: unit,
+    });
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <div className="settings-view">
+      <label className="settings-label">Refresh every</label>
+      <div className="settings-row">
+        <input
+          type="number"
+          min={1}
+          className="settings-input"
+          value={value}
+          onChange={(e) => setValue(Math.max(1, parseInt(e.target.value) || 1))}
+        />
+        <select
+          className="settings-select"
+          value={unit}
+          onChange={(e) => setUnit(e.target.value as "seconds" | "minutes" | "hours")}
+        >
+          <option value="seconds">seconds</option>
+          <option value="minutes">minutes</option>
+          <option value="hours">hours</option>
+        </select>
+      </div>
+      <button className="settings-save" onClick={handleSave}>
+        Save
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // App component
 // ---------------------------------------------------------------------------
 
 function App() {
+  // --- Window mode ---
+  const [windowMode, setWindowMode] = useState<"usage" | "settings">("usage");
+
   // --- Provider detection ---
   const [provider, setProvider] = useState<Provider | null>(null);
 
@@ -247,6 +310,7 @@ function App() {
   const [showPlan, setShowPlan] = useState(true);
   const [showOnDemand, setShowOnDemand] = useState(true);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("remaining");
+  const [pollIntervalSeconds, setPollIntervalSeconds] = useState(60);
 
   // --- Delta tracking refs ---
   const isFirstLoad = useRef(true);
@@ -358,7 +422,11 @@ function App() {
   useEffect(() => {
     try {
       const label = getCurrentWindow().label;
-      setProvider(label === "claude" ? "claude" : "cursor");
+      if (label === "settings") {
+        setWindowMode("settings");
+      } else {
+        setProvider(label === "claude" ? "claude" : "cursor");
+      }
     } catch {
       setProvider("cursor");
     }
@@ -367,21 +435,23 @@ function App() {
   useEffect(() => {
     if (!provider) return;
     fetchUsage();
-    const interval = setInterval(fetchUsage, POLL_INTERVAL_SECONDS * 1000);
+    const interval = setInterval(fetchUsage, pollIntervalSeconds * 1000);
     return () => clearInterval(interval);
-  }, [fetchUsage, provider]);
+  }, [fetchUsage, provider, pollIntervalSeconds]);
 
   useEffect(() => {
     invoke<Settings>("get_settings").then((s) => {
       setShowPlan(s.showPlan);
       setShowOnDemand(s.showOnDemand);
       setDisplayMode(s.displayMode ?? "remaining");
+      setPollIntervalSeconds(s.pollIntervalSeconds ?? 60);
     });
 
     const unlisten = listen<Settings>("settings-changed", (event) => {
       setShowPlan(event.payload.showPlan);
       setShowOnDemand(event.payload.showOnDemand);
       setDisplayMode(event.payload.displayMode ?? "remaining");
+      setPollIntervalSeconds(event.payload.pollIntervalSeconds ?? 60);
     });
 
     return () => {
@@ -427,6 +497,10 @@ function App() {
   // -------------------------------------------------------------------------
   // Render — NO provider-specific branching below this line
   // -------------------------------------------------------------------------
+
+  if (windowMode === "settings") {
+    return <SettingsView />;
+  }
 
   return (
     <div className="widget" data-tauri-drag-region>

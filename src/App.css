@@ -372,3 +372,77 @@ body,
   color: #ef4444;
   font-family: "SF Mono", "Menlo", "Monaco", monospace;
 }
+
+/* Settings view */
+.settings-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  height: 100%;
+  font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  background: #1c1c1e;
+  color: #fff;
+}
+
+.settings-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.settings-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-input {
+  width: 70px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 14px;
+  font-family: "SF Mono", "Menlo", monospace;
+  text-align: center;
+  outline: none;
+}
+
+.settings-input:focus {
+  border-color: rgba(129, 140, 248, 0.6);
+}
+
+.settings-select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-select:focus {
+  border-color: rgba(129, 140, 248, 0.6);
+}
+
+.settings-save {
+  padding: 6px 24px;
+  border-radius: 6px;
+  border: none;
+  background: #818cf8;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.settings-save:hover {
+  background: #6366f1;
+}

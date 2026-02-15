@@ -38,6 +38,7 @@ struct CursorIndividualUsage {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct CursorPlanUsage {
     used: Option<i64>,
     limit: Option<i64>,
@@ -90,10 +91,17 @@ pub struct Settings {
     pub show_claude_window: bool,
     #[serde(default = "default_display_mode")]
     pub display_mode: String, // "usage" or "remaining"
+    #[serde(default = "default_poll_interval")]
+    pub poll_interval_seconds: u64,
 }
 
 fn default_display_mode() -> String {
     "remaining".to_string()
+}
+
+#[allow(dead_code)]
+fn default_poll_interval() -> u64 {
+    60
 }
 
 impl Default for Settings {
@@ -103,6 +111,7 @@ impl Default for Settings {
             show_on_demand: true,
             show_claude_window: false,
             display_mode: default_display_mode(),
+            poll_interval_seconds: default_poll_interval(),
         }
     }
 }
@@ -1046,6 +1055,26 @@ fn create_claude_window(app_handle: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn create_settings_window(app_handle: &AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("settings") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(app_handle, "settings", WebviewUrl::App("index.html".into()))
+        .title("Refresh Interval")
+        .inner_size(300.0, 180.0)
+        .decorations(true)
+        .transparent(false)
+        .always_on_top(false)
+        .resizable(false)
+        .build()
+        .map_err(|e| format!("Failed to create settings window: {}", e))?;
+
+    Ok(())
+}
+
 // --- Tauri Commands ---
 
 #[tauri::command]
@@ -1189,6 +1218,37 @@ fn get_settings(state: tauri::State<'_, Mutex<Settings>>) -> Settings {
     state.lock().unwrap().clone()
 }
 
+#[tauri::command]
+fn save_poll_interval(
+    interval_value: u64,
+    interval_unit: String,
+    app_handle: AppHandle,
+    state: tauri::State<'_, Mutex<Settings>>,
+) -> Result<(), String> {
+    let multiplier: u64 = match interval_unit.as_str() {
+        "minutes" => 60,
+        "hours" => 3600,
+        _ => 1, // "seconds"
+    };
+    let total_seconds = (interval_value * multiplier).max(10);
+
+    let mut settings = state.lock().unwrap();
+    settings.poll_interval_seconds = total_seconds;
+    save_settings(&settings);
+    let _ = app_handle.emit("settings-changed", settings.clone());
+    println!(
+        "[token-juice] Poll interval changed to {}s",
+        total_seconds
+    );
+    drop(settings);
+
+    if let Some(window) = app_handle.get_webview_window("settings") {
+        let _ = window.close();
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1197,7 +1257,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             fetch_cursor_usage,
             fetch_claude_usage,
-            get_settings
+            get_settings,
+            save_poll_interval
         ])
         .setup(|app| {
             let settings = load_settings();
@@ -1230,6 +1291,8 @@ pub fn run() {
                 .item(&show_claude_item)
                 .separator()
                 .item(&remaining_mode_item)
+                .separator()
+                .text("configure_interval", "Configure Refresh Interval...")
                 .separator()
                 .item(&quit_item)
                 .build()?;
@@ -1277,6 +1340,9 @@ pub fn run() {
                             "[token-juice] Settings changed: show_plan={}, show_on_demand={}, show_claude_window={}, display_mode={}",
                             settings.show_plan, settings.show_on_demand, settings.show_claude_window, settings.display_mode
                         );
+                    }
+                    "configure_interval" => {
+                        let _ = create_settings_window(app_handle);
                     }
                     _ => {}
                 }
