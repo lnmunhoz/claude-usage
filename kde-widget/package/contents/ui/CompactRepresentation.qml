@@ -8,6 +8,23 @@ MouseArea {
 
     readonly property int barWidth: 5
     readonly property int iconSz: Math.min(height - 4, 16)
+    readonly property int spacing: 2
+    readonly property int margins: 2
+
+    // Tell the panel how wide we need to be
+    implicitWidth: {
+        var w = margins * 2
+        if (root.showCursor) {
+            w += iconSz + spacing + barWidth + spacing + barWidth
+        }
+        if (root.showCursor && root.showClaude) {
+            w += spacing + 4 + spacing  // gap
+        }
+        if (root.showClaude) {
+            w += iconSz + spacing + barWidth + spacing + barWidth
+        }
+        return w
+    }
 
     hoverEnabled: true
     onClicked: root.expanded = !root.expanded
