@@ -9,7 +9,7 @@ import claudeLogo from "./assets/claude-logo.svg";
 
 // Poll interval in seconds
 
-const POLL_INTERVAL_SECONDS = 60;
+const POLL_INTERVAL_SECONDS = 3;
 
 // Test mode: simulates a fake spend delta on every poll to test animations
 const TEST_MODE = false;
@@ -137,14 +137,16 @@ function clampFill(p: number) {
 // ---------------------------------------------------------------------------
 
 function computeFill(percent: number, mode: DisplayMode): number {
-  return mode === "remaining"
-    ? clampFill(100 - percent)
-    : clampFill(percent);
+  return mode === "remaining" ? clampFill(100 - percent) : clampFill(percent);
 }
 
 function cursorToViewModel(
   data: UsageData,
-  settings: { showPlan: boolean; showOnDemand: boolean; displayMode: DisplayMode },
+  settings: {
+    showPlan: boolean;
+    showOnDemand: boolean;
+    displayMode: DisplayMode;
+  },
   delta: string | null,
 ): BarViewModel {
   const planPercent = data.percentUsed;
@@ -190,7 +192,10 @@ function cursorToViewModel(
 // Adapter: Claude → BarViewModel
 // ---------------------------------------------------------------------------
 
-function claudeToViewModel(data: ClaudeUsageData, mode: DisplayMode): BarViewModel {
+function claudeToViewModel(
+  data: ClaudeUsageData,
+  mode: DisplayMode,
+): BarViewModel {
   const sessionPercent = data.sessionPercentUsed;
   const weeklyPercent = data.weeklyPercentUsed;
 
@@ -395,7 +400,15 @@ function App() {
       );
     }
     return null;
-  }, [provider, cursorUsage, claudeUsage, showPlan, showOnDemand, displayMode, spendDelta]);
+  }, [
+    provider,
+    cursorUsage,
+    claudeUsage,
+    showPlan,
+    showOnDemand,
+    displayMode,
+    spendDelta,
+  ]);
 
   // -------------------------------------------------------------------------
   // Animation classes
@@ -450,8 +463,9 @@ function App() {
                     data-tauri-drag-region
                     style={{
                       height: `${vm.primaryBar.fill}%`,
-                      backgroundColor: vm.primaryBar.color,
-                      boxShadow: `0 0 10px ${vm.primaryBar.glow}, 0 0 4px ${vm.primaryBar.glow}`,
+                      background: `linear-gradient(to top, ${vm.primaryBar.color} 0%, ${vm.primaryBar.color} 30%, color-mix(in srgb, ${vm.primaryBar.color}, white 25%) 50%, ${vm.primaryBar.color} 70%, ${vm.primaryBar.color} 100%)`,
+                      backgroundSize: '100% 300%',
+                      boxShadow: `0 0 14px ${vm.primaryBar.glow}, 0 0 6px ${vm.primaryBar.glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
                     }}
                   />
                 </div>
@@ -480,8 +494,9 @@ function App() {
                     data-tauri-drag-region
                     style={{
                       height: `${vm.secondaryBar.fill}%`,
-                      backgroundColor: vm.secondaryBar.color,
-                      boxShadow: `0 0 10px ${vm.secondaryBar.glow}, 0 0 4px ${vm.secondaryBar.glow}`,
+                      background: `linear-gradient(to top, ${vm.secondaryBar.color} 0%, ${vm.secondaryBar.color} 30%, color-mix(in srgb, ${vm.secondaryBar.color}, white 25%) 50%, ${vm.secondaryBar.color} 70%, ${vm.secondaryBar.color} 100%)`,
+                      backgroundSize: '100% 300%',
+                      boxShadow: `0 0 14px ${vm.secondaryBar.glow}, 0 0 6px ${vm.secondaryBar.glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
                     }}
                   />
                 </div>

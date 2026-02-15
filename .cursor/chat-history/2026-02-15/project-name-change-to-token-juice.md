@@ -1618,3 +1618,417 @@ Done. The Claude bars now have distinct color palettes:
 
 Both still converge to red at high usage thresholds to maintain the warning signal.
 
+### **User**
+
+You know, the glow effect in the progress bar should be a little bit more visible and then to look more like a juice thing. Can you use your creativity in CSS to make it more animation? Cool.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] The user wants me to make the progress bar glow effect more visible and add more juice-like animations to make it look more liquid/juicy. Let me read the current CSS to understand what we have and then enhance it.
+Let me read the current CSS to see what we're working with.
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now let me enhance the bar with juicier effects -- a stronger glow, subtle ambient pulsing, a liquid bubble animation, and a richer glass highlight.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  old_string: /* Progress bar - slim liquid glass style */
+.bar-track {
+  flex: 1;
+  width: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  min-height: 0;
+}
+
+.bar-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-radius: 5px;
+  overflow: hidden;
+  transition:
+    height 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.5s ease,
+    box-shadow 0.5s ease;
+}
+
+/* Glass highlight - vertical light strip on the left */
+.bar-fill::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 1px;
+  bottom: 2px;
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.45),
+    rgba(255, 255, 255, 0.1) 40%,
+    rgba(255, 255, 255, 0) 80%
+  );
+  pointer-events: none;
+}
+
+/* Shimmer sweep on data update */
+.bar-fill::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 40%;
+  border-radius: 5px;
+  background: linear-gradient(
+    to top,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.25) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  opacity: 0;
+  pointer-events: none;
+  bottom: -40%;
+}
+
+.bar-fill.shimmer::after {
+  animation: shimmer-sweep 1s ease-out forwards;
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    bottom: -40%;
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    bottom: 100%;
+    opacity: 0;
+  }
+}
+
+/* Pulse glow on the bar that changed */
+.bar-fill.pulse-glow {
+  animation: bar-pulse 1.5s ease-out;
+}
+
+@keyframes bar-pulse {
+  0% {
+    filter: brightness(1);
+  }
+  20% {
+    filter: brightness(1.8);
+  }
+  50% {
+    filter: brightness(1.3);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+  new_string: /* Progress bar - slim liquid glass tube */
+.bar-track {
+  flex: 1;
+  width: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 5px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.5),
+    inset 0 -1px 2px rgba(255, 255, 255, 0.05);
+  min-height: 0;
+}
+
+.bar-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-radius: 5px;
+  overflow: hidden;
+  transition:
+    height 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.5s ease,
+    box-shadow 0.5s ease;
+  /* Ambient glow breathing — the juice softly pulses */
+  animation: juice-breathe 3s ease-in-out infinite;
+}
+
+@keyframes juice-breathe {
+  0%, 100% {
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    filter: brightness(1.15) saturate(1.1);
+  }
+}
+
+/* Glass highlight — vertical light strip on the left + liquid meniscus at top */
+.bar-fill::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 5px;
+  background:
+    /* Meniscus — bright highlight at the top surface of the liquid */
+    linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.5) 0%,
+      rgba(255, 255, 255, 0.15) 4px,
+      transparent 8px
+    ),
+    /* Vertical glass strip on the left */
+    linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.2) 0px,
+      rgba(255, 255, 255, 0.05) 2px,
+      transparent 4px
+    );
+  pointer-events: none;
+}
+
+/* Rising bubble animation — a small bright dot floats up through the liquid */
+.bar-fill::after {
+  content: "";
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.6) 0%,
+    rgba(255, 255, 255, 0.15) 60%,
+    transparent 100%
+  );
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+  animation: bubble-rise 4s ease-in-out infinite 1s;
+}
+
+@keyframes bubble-rise {
+  0% {
+    bottom: 5%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0.5;
+    /* Slight horizontal wobble */
+    transform: translateX(calc(-50% + 1px));
+  }
+  70% {
+    opacity: 0.3;
+    transform: translateX(calc(-50% - 1px));
+  }
+  90% {
+    opacity: 0;
+  }
+  100% {
+    bottom: 92%;
+    opacity: 0;
+    transform: translateX(-50%);
+  }
+}
+
+/* Shimmer sweep on data update — brighter and wider */
+.bar-fill.shimmer {
+  animation: juice-shimmer-flash 1s ease-out;
+}
+
+@keyframes juice-shimmer-flash {
+  0% {
+    filter: brightness(1) saturate(1);
+  }
+  15% {
+    filter: brightness(1.9) saturate(1.4);
+  }
+  40% {
+    filter: brightness(1.4) saturate(1.2);
+  }
+  100% {
+    filter: brightness(1) saturate(1);
+  }
+}
+
+/* Pulse glow on the bar that changed — stronger, juicier */
+.bar-fill.pulse-glow {
+  animation: bar-pulse 1.5s ease-out;
+}
+
+@keyframes bar-pulse {
+  0% {
+    filter: brightness(1) saturate(1);
+  }
+  20% {
+    filter: brightness(2) saturate(1.5);
+  }
+  50% {
+    filter: brightness(1.4) saturate(1.2);
+  }
+  100% {
+    filter: brightness(1) saturate(1);
+  }
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now let me also boost the glow intensity in the inline `boxShadow` styles in the JSX to make the outer glow more visible.
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  offset: 453
+  limit: 40
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:                       boxShadow: `0 0 10px ${vm.primaryBar.glow}, 0 0 4px ${vm.primaryBar.glow}`,
+  new_string:                       boxShadow: `0 0 14px ${vm.primaryBar.glow}, 0 0 6px ${vm.primaryBar.glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:                       boxShadow: `0 0 10px ${vm.secondaryBar.glow}, 0 0 4px ${vm.secondaryBar.glow}`,
+  new_string:                       boxShadow: `0 0 14px ${vm.secondaryBar.glow}, 0 0 6px ${vm.secondaryBar.glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Here's what changed to make the bars feel more like liquid juice:
+
+**Ambient glow breathing** -- the bar softly pulses brightness and saturation on a 3-second loop, like liquid gently catching light.
+
+**Liquid meniscus** -- a bright highlight at the top surface of the fill simulates the curved meniscus you see at the surface of liquid in a glass tube.
+
+**Rising bubble** -- a small glowing dot floats upward through the bar on a 4-second loop with a subtle horizontal wobble, like a bubble in juice.
+
+**Stronger outer glow** -- the `boxShadow` is wider (14px + 6px) with an added inner glow (`inset 0 0 8px`) to make the bar look like it's radiating light from within.
+
+**Brighter shimmer flash** -- on data updates, the bar flashes up to 1.9x brightness with boosted saturation, then settles back.
+
+**Juicier pulse** -- when usage changes, the pulse hits 2x brightness with 1.5x saturation for a more vivid pop.
+
+### **User**
+
+I like the pulse but I would like it to move like a gradient like top bottom you know or bottom to top. Right now it's just pulsing the entire bar which is cool but I would like more like a moving effect.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  offset: 92
+  limit: 30
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+I'll replace the flat brightness pulse with a traveling light gradient that moves bottom-to-top through the bar, like light refracting through liquid.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  old_string:   /* Ambient glow breathing — the juice softly pulses */
+  animation: juice-breathe 3s ease-in-out infinite;
+}
+
+@keyframes juice-breathe {
+  0%, 100% {
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    filter: brightness(1.15) saturate(1.1);
+  }
+}
+  new_string:   /* Traveling light — a bright band sweeps bottom-to-top through the juice */
+  background-size: 100% 300%;
+  background-position: 0% 100%;
+  animation: juice-flow 3.5s ease-in-out infinite;
+}
+
+@keyframes juice-flow {
+  0% {
+    background-position: 0% 100%;
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    background-position: 0% 0%;
+    filter: brightness(1.12) saturate(1.08);
+  }
+  100% {
+    background-position: 0% 100%;
+    filter: brightness(1) saturate(1);
+  }
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now I need to update the inline `backgroundColor` in the JSX to use a gradient instead, so the `background-position` animation actually has something to sweep. I'll change both bars to use a `background` with a vertical gradient that has a bright band in the middle.
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  offset: 460
+  limit: 40
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:                     style={{
+                      height: `${vm.primaryBar.fill}%`,
+                      backgroundColor: vm.primaryBar.color,
+                      boxShadow: `0 0 14px ${vm.primaryBar.glow}, 0 0 6px ${vm.primaryBar.glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
+                    }}
+  new_string:                     style={{
+                      height: `${vm.primaryBar.fill}%`,
+                      background: `linear-gradient(to top, ${vm.primaryBar.color} 0%, ${vm.primaryBar.color} 30%, color-mix(in srgb, ${vm.primaryBar.color}, white 25%) 50%, ${vm.primaryBar.color} 70%, ${vm.primaryBar.color} 100%)`,
+                      backgroundSize: '100% 300%',
+                      boxShadow: `0 0 14px ${vm.primaryBar.glow}, 0 0 6px ${vm.primaryBar.glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
+                    }}
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:                     style={{
+                      height: `${vm.secondaryBar.fill}%`,
+                      backgroundColor: vm.secondaryBar.color,
+                      boxShadow: `0 0 14px ${vm.secondaryBar.glow}, 0 0 6px ${vm.secondaryBar.glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
+                    }}
+  new_string:                     style={{
+                      height: `${vm.secondaryBar.fill}%`,
+                      background: `linear-gradient(to top, ${vm.secondaryBar.color} 0%, ${vm.secondaryBar.color} 30%, color-mix(in srgb, ${vm.secondaryBar.color}, white 25%) 50%, ${vm.secondaryBar.color} 70%, ${vm.secondaryBar.color} 100%)`,
+                      backgroundSize: '100% 300%',
+                      boxShadow: `0 0 14px ${vm.secondaryBar.glow}, 0 0 6px ${vm.secondaryBar.glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
+                    }}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now I also need to update the CSS transition to include `background-position` so the color change still transitions smoothly, and make sure the inline `backgroundSize` works with the animation.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  old_string:   transition:
+    height 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.5s ease,
+    box-shadow 0.5s ease;
+  /* Traveling light — a bright band sweeps bottom-to-top through the juice */
+  background-size: 100% 300%;
+  background-position: 0% 100%;
+  animation: juice-flow 3.5s ease-in-out infinite;
+  new_string:   transition:
+    height 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.5s ease;
+  /* Traveling light — a bright band sweeps bottom-to-top through the juice */
+  animation: juice-flow 3.5s ease-in-out infinite;
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Done. Here's what's happening now: each bar has a gradient with a bright band (the bar color mixed with 25% white) in the center. The `juice-flow` animation shifts `background-position` from bottom to top on a 3.5-second loop, so that bright band visibly travels upward through the liquid like light refracting through juice in a glass. The subtle brightness/saturation boost at the midpoint reinforces the effect.
+
