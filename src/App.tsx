@@ -101,15 +101,29 @@ function getOdGlow(p: number) {
   if (p < 90) return "rgba(249, 115, 22, 0.5)";
   return "rgba(239, 68, 68, 0.5)";
 }
-function getClaudeColor(p: number) {
-  if (p < 50) return "#f59e0b";
-  if (p < 75) return "#f97316";
+// Claude session (5h) — yellowish
+function getClaudeSessionColor(p: number) {
+  if (p < 50) return "#facc15";
+  if (p < 75) return "#eab308";
+  if (p < 90) return "#f97316";
+  return "#ef4444";
+}
+function getClaudeSessionGlow(p: number) {
+  if (p < 50) return "rgba(250, 204, 21, 0.5)";
+  if (p < 75) return "rgba(234, 179, 8, 0.5)";
+  if (p < 90) return "rgba(249, 115, 22, 0.5)";
+  return "rgba(239, 68, 68, 0.5)";
+}
+// Claude weekly (7d) — orangeish
+function getClaudeWeeklyColor(p: number) {
+  if (p < 50) return "#f97316";
+  if (p < 75) return "#ea580c";
   if (p < 90) return "#ef4444";
   return "#dc2626";
 }
-function getClaudeGlow(p: number) {
-  if (p < 50) return "rgba(245, 158, 11, 0.5)";
-  if (p < 75) return "rgba(249, 115, 22, 0.5)";
+function getClaudeWeeklyGlow(p: number) {
+  if (p < 50) return "rgba(249, 115, 22, 0.5)";
+  if (p < 75) return "rgba(234, 88, 12, 0.5)";
   if (p < 90) return "rgba(239, 68, 68, 0.5)";
   return "rgba(220, 38, 38, 0.5)";
 }
@@ -186,15 +200,15 @@ function claudeToViewModel(data: ClaudeUsageData, mode: DisplayMode): BarViewMod
       percent: computeFill(sessionPercent, mode),
       fill: computeFill(sessionPercent, mode),
       label: "5h",
-      color: getClaudeColor(sessionPercent),
-      glow: getClaudeGlow(sessionPercent),
+      color: getClaudeSessionColor(sessionPercent),
+      glow: getClaudeSessionGlow(sessionPercent),
     },
     secondaryBar: {
       percent: computeFill(weeklyPercent, mode),
       fill: computeFill(weeklyPercent, mode),
       label: "Week",
-      color: getClaudeColor(weeklyPercent),
-      glow: getClaudeGlow(weeklyPercent),
+      color: getClaudeWeeklyColor(weeklyPercent),
+      glow: getClaudeWeeklyGlow(weeklyPercent),
     },
     showBothBars: true,
     planLabel: data.planType ?? "claude",
@@ -446,7 +460,7 @@ function App() {
                   className={`bar-label ${bounceClass}`}
                   data-tauri-drag-region
                 >
-                  {vm.primaryBar.percent.toFixed(1)}%
+                  {parseFloat(vm.primaryBar.percent.toFixed(1))}%
                 </span>
                 {vm.showBothBars && (
                   <span className="bar-tag" data-tauri-drag-region>
@@ -476,7 +490,7 @@ function App() {
                   className={`bar-label ${bounceClass}`}
                   data-tauri-drag-region
                 >
-                  {vm.secondaryBar.percent.toFixed(1)}%
+                  {parseFloat(vm.secondaryBar.percent.toFixed(1))}%
                 </span>
                 {vm.showBothBars && (
                   <span className="bar-tag" data-tauri-drag-region>

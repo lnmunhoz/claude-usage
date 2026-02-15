@@ -1501,3 +1501,120 @@ To-do's from the plan have already been created. Do not create them again. Mark 
 
 Done. All four `percent:` assignments now go through `computeFill`, so in juice (remaining) mode the labels will show `100 - usage%` -- e.g. 19.7% usage will display as 80.3% remaining.
 
+### **User**
+
+When we're showing the percentages, we should show like, if it's like an exact number, like 5% and there's no decimals, we shouldn't show the dot zero.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: Grep]
+  pattern: \.toFixed\(1\)
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Simple fix -- replace `.toFixed(1)` with a helper that drops the trailing `.0`.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:                   {vm.primaryBar.percent.toFixed(1)}%
+  new_string:                   {parseFloat(vm.primaryBar.percent.toFixed(1))}%
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:                   {vm.secondaryBar.percent.toFixed(1)}%
+  new_string:                   {parseFloat(vm.secondaryBar.percent.toFixed(1))}%
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Done. Wrapping with `parseFloat()` strips the trailing `.0` -- so `5.0` becomes `5`, while `19.7` stays `19.7`.
+
+### **User**
+
+For cloud code, the daily session should be more yellowish and the weekly session should be more orangeish.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  offset: 100
+  limit: 16
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Right now both the session (5h) and weekly bars share the same `getClaudeColor`/`getClaudeGlow`. I'll split them into two: a yellowish palette for the session bar and an orangeish palette for the weekly bar.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string: function getClaudeColor(p: number) {
+  if (p < 50) return "#f59e0b";
+  if (p < 75) return "#f97316";
+  if (p < 90) return "#ef4444";
+  return "#dc2626";
+}
+function getClaudeGlow(p: number) {
+  if (p < 50) return "rgba(245, 158, 11, 0.5)";
+  if (p < 75) return "rgba(249, 115, 22, 0.5)";
+  if (p < 90) return "rgba(239, 68, 68, 0.5)";
+  return "rgba(220, 38, 38, 0.5)";
+}
+  new_string: // Claude session (5h) — yellowish
+function getClaudeSessionColor(p: number) {
+  if (p < 50) return "#facc15";
+  if (p < 75) return "#eab308";
+  if (p < 90) return "#f97316";
+  return "#ef4444";
+}
+function getClaudeSessionGlow(p: number) {
+  if (p < 50) return "rgba(250, 204, 21, 0.5)";
+  if (p < 75) return "rgba(234, 179, 8, 0.5)";
+  if (p < 90) return "rgba(249, 115, 22, 0.5)";
+  return "rgba(239, 68, 68, 0.5)";
+}
+// Claude weekly (7d) — orangeish
+function getClaudeWeeklyColor(p: number) {
+  if (p < 50) return "#f97316";
+  if (p < 75) return "#ea580c";
+  if (p < 90) return "#ef4444";
+  return "#dc2626";
+}
+function getClaudeWeeklyGlow(p: number) {
+  if (p < 50) return "rgba(249, 115, 22, 0.5)";
+  if (p < 75) return "rgba(234, 88, 12, 0.5)";
+  if (p < 90) return "rgba(239, 68, 68, 0.5)";
+  return "rgba(220, 38, 38, 0.5)";
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now update the Claude adapter to use the separate color functions.
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  offset: 189
+  limit: 25
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:       label: "5h",
+      color: getClaudeColor(sessionPercent),
+      glow: getClaudeGlow(sessionPercent),
+  new_string:       label: "5h",
+      color: getClaudeSessionColor(sessionPercent),
+      glow: getClaudeSessionGlow(sessionPercent),
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:       label: "Week",
+      color: getClaudeColor(weeklyPercent),
+      glow: getClaudeGlow(weeklyPercent),
+  new_string:       label: "Week",
+      color: getClaudeWeeklyColor(weeklyPercent),
+      glow: getClaudeWeeklyGlow(weeklyPercent),
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Done. The Claude bars now have distinct color palettes:
+
+- **Session (5h)** -- yellowish: starts at `#facc15` (yellow-400) at low usage, progressing through `#eab308` (yellow-500), then orange, then red at high usage.
+- **Weekly (7d)** -- orangeish: starts at `#f97316` (orange-500) at low usage, progressing through `#ea580c` (orange-600), then red, then deep red at high usage.
+
+Both still converge to red at high usage thresholds to maintain the warning signal.
+
