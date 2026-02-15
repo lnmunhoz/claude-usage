@@ -45,22 +45,6 @@ PlasmoidItem {
         }
     }
 
-    // ---- Helper path resolution ----
-    function installDir() {
-        var home = StandardPaths.writableLocation(StandardPaths.HomeLocation)
-        return home + "/.local/share/token-juice"
-    }
-
-    function helperCommand() {
-        var custom = plasmoid.configuration.helperPath
-        if (custom && custom.length > 0) {
-            return "python3 '" + custom + "'"
-        }
-        // Use the venv Python created by install.sh
-        var base = installDir()
-        return "'" + base + "/venv/bin/python' '" + base + "/token_juice_helper.py'"
-    }
-
     // ---- Executable DataSource ----
     Plasma5Support.DataSource {
         id: executable
@@ -68,15 +52,23 @@ PlasmoidItem {
         connectedSources: []
 
         onNewData: function(source, data) {
+            // The executable engine fires onNewData when the command finishes.
+            // Keys: "stdout", "stderr", "exit code", "exit status"
+            var stdout = data["stdout"]
+            if (stdout === undefined || stdout === null) {
+                // Not finished yet (some engines signal connection before data)
+                return
+            }
+
             executable.disconnectSource(source)
             root.loading = false
 
-            var stdout = data["stdout"] || ""
-            var stderr = data["stderr"] || ""
+            stdout = stdout.toString().trim()
+            var stderr = (data["stderr"] || "").toString().trim()
             var exitCode = data["exit code"]
 
-            if (exitCode !== 0 || stdout.trim().length === 0) {
-                root.errorMessage = stderr || "Helper script failed"
+            if (stdout.length === 0) {
+                root.errorMessage = stderr || ("Helper exited with code " + exitCode)
                 return
             }
 
@@ -110,7 +102,7 @@ PlasmoidItem {
                     root.claudeExtraLimit = d.extraUsageLimit
                 }
             } catch (e) {
-                root.errorMessage = "Failed to parse response: " + e
+                root.errorMessage = "Parse error: " + e.toString()
             }
         }
 
@@ -122,7 +114,13 @@ PlasmoidItem {
     // ---- Polling ----
     function fetchUsage() {
         root.loading = true
-        var cmd = helperCommand() + " " + root.currentProvider
+        var custom = plasmoid.configuration.helperPath
+        var cmd
+        if (custom && custom.length > 0) {
+            cmd = "python3 '" + custom + "' " + root.currentProvider
+        } else {
+            cmd = "bash -c '\"$HOME/.local/share/token-juice/venv/bin/python\" \"$HOME/.local/share/token-juice/token_juice_helper.py\" " + root.currentProvider + "'"
+        }
         executable.exec(cmd)
     }
 
