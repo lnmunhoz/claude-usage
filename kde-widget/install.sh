@@ -51,9 +51,17 @@ setup_venv() {
 
     if [[ ${#py_missing[@]} -gt 0 ]]; then
         info "Installing Python packages into venv: ${py_missing[*]}"
+
+        # rookiepy uses PyO3 (Rust-Python bindings) which may not officially
+        # support the latest Python yet. The stable ABI forward-compat flag
+        # lets it build anyway (recommended by PyO3 docs).
+        export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+
         "${pip}" install "${py_missing[@]}" || {
             err "Failed to install Python packages."
-            err "Try manually: ${VENV_DIR}/bin/pip install rookiepy requests"
+            err "Try manually:"
+            err "  export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1"
+            err "  ${VENV_DIR}/bin/pip install rookiepy requests"
             exit 1
         }
     fi
