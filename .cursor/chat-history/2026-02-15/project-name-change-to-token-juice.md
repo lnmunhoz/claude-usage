@@ -327,3 +327,1177 @@ All done. Here's a summary of everything that was renamed:
 
 The `Cargo.lock` will regenerate automatically on the next build. Note that the actual workspace directory is still named `cursor-juice` on disk -- you can rename that at the filesystem level whenever you're ready.
 
+### **User**
+
+Okay, and since we renamed it to tokenJuice, I want to change a little bit how the progress bar works, because right now it's like a progress bar from bottom to top, but since it's kind of like the concept of the app is like a juice, it should be like top, bottom, that the progress bar kind of like goes down as the usage increases, so we know how much percentage we use. But maybe this could be an option the user chooses to see like the left percentage of or the current percentage use or the left percentage use and then if it's the current percentage use we show the progress bar from empty to full and if it's like left percentage use we show from full to then empty. Can be an option in the menu
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Let me explore the current progress bar implementation and the menu/settings system to understand how things work today.
+[Tool: Task]
+  subagent_type: explore
+  description: Explore progress bar and settings
+  prompt: Explore the project at /Users/lnmunhoz/projects/cursor-juice thoroughly. I need to understand:
+
+1. How the progress bar currently works in the UI. Read `src/App.tsx` fully and find all code related to progress bars, percentage calculations, and how the fill/height is determined. Pay special attention to how `percentUsed` or similar values drive the visual bar.
+
+2. How the CSS styles the progress bar. Read `src/App.css` fully and find all styles related to the progress bar fill, height, animations, and direction (bottom-to-top vs top-to-bottom).
+
+3. How the settings/menu system works. Look in `src-tauri/src/lib.rs` for:
+   - The `Settings` struct definition
+   - How settings are serialized/loaded/saved
+   - How menu items are created (especially the CheckMenuItem pattern)
+   - How settings changes are emitted to the frontend
+   - How the frontend listens to settings changes
+
+4. How the frontend receives and uses settings from the backend.
+
+Return ALL relevant code snippets with line numbers for each of these areas.
+  model: fast
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] Now I have a very thorough understanding of how the progress bar and settings system work. Let me create a plan for the user.
+
+The user wants:
+1. Change the progress bar direction concept:
+   - Currently: bottom-to-top, showing "used" percentage
+   - Option A: "Used" mode - bar fills from empty to full (bottom-to-top, current behavior)
+   - Option B: "Remaining" mode - bar starts full and drains (top-to-bottom, "juice draining" concept)
+   
+2. This should be a menu option the user can toggle
+
+Let me think about the implementation:
+
+
+For the "remaining" mode, I'd calculate the fill as `100 - percentUsed` to show what's left, anchor the bar at the top instead of the bottom so it drains downward, and toggle between these two display modes based on a user setting. Remaining" (juice concept)** - Shows how much is left
+- Bar starts full and drains as usage increases
+- 0% used = full bar (100% juice), 100% used = empty bar (no juice)
+- `fill = 100 - percentUsed`
+- Bar should anchor from TOP so it visually "drains" downward
+
+For the CSS:
+- Current: `.bar-fill` has `bottom: 0` (anchored to bottom, fills upward)
+- "Remaining" mode: `.bar-fill` should have `top: 0` instead of `bottom: 0` (anchored to top, drains downward)
+
+For the settings:
+- Add a new setting to the Settings struct in Rust: something like `display_mode` which can be "used" or "remaining"
+- Add a menu item for it
+- Pass it to the frontend
+
+The frontend will then use this setting to decide how to calculate the fill percentage and which CSS class to apply.
+I have a clear picture of the current implementation. Let me put together a plan.
+[Tool: CreatePlan]
+  name: Progress bar display mode
+  overview: Add a "Display Mode" setting that lets the user choose between showing "Usage" (bar fills up as tokens are consumed, current behavior) or "Remaining" (bar starts full and drains down like juice being consumed). The mode is toggled via the app menu and persisted in settings.
+  plan: # Progress Bar Display Mode (Usage vs Remaining)
+
+## Concept
+
+Two modes controlled by a new setting:
+
+- **"Usage" mode** (current behavior): Bar fills bottom-to-top as usage increases. 0% used = empty, 100% used = full.
+- **"Remaining" mode** (juice draining): Bar starts full at the top and drains downward. 0% used = full bar, 100% used = empty bar. This matches the "juice" metaphor -- you see the juice level drop as you consume tokens.
+
+```mermaid
+graph LR
+  subgraph usageMode ["Usage Mode (fill up)"]
+    U0["0% used: empty"] --> U50["50% used: half full"] --> U100["100% used: full"]
+  end
+  subgraph remainingMode ["Remaining Mode (drain down)"]
+    R0["0% used: full"] --> R50["50% used: half full"] --> R100["100% used: empty"]
+  end
+```
+
+## Changes
+
+### 1. Backend: Settings struct and menu -- [src-tauri/src/lib.rs](src-tauri/src/lib.rs)
+
+**Settings struct** (~line 85): Add a new field `display_mode: String` with values `"usage"` or `"remaining"`, defaulting to `"remaining"` (the juice metaphor is the whole point of the app).
+
+```rust
+pub struct Settings {
+    pub show_plan: bool,
+    pub show_on_demand: bool,
+    pub show_claude_window: bool,
+    pub display_mode: String, // "usage" or "remaining"
+}
+```
+
+Default:
+```rust
+display_mode: "remaining".to_string(),
+```
+
+**Menu items** (~line 1198): Add a new `CheckMenuItemBuilder` for the display mode. A checked state means "Remaining" mode is active, unchecked means "Usage" mode:
+
+```rust
+let remaining_mode_item =
+    CheckMenuItemBuilder::with_id("remaining_mode", "Show Remaining (Juice Mode)")
+        .checked(settings.display_mode == "remaining")
+        .build(app)?;
+```
+
+Insert it in the submenu between the existing visibility toggles and the separator before Quit.
+
+**Menu event handler** (~line 1233): Handle the `"remaining_mode"` event ID -- toggle `display_mode` between `"remaining"` and `"usage"`, save, and emit.
+
+### 2. Frontend: Settings interface -- [src/App.tsx](src/App.tsx)
+
+**Settings interface** (~line 46): Add `displayMode: "usage" | "remaining"`.
+
+**State** (~line 215): Add `const [displayMode, setDisplayMode] = useState<"usage" | "remaining">("remaining")`.
+
+**Settings listener** (~line 337): Read and update `displayMode` from initial fetch and from `settings-changed` events.
+
+### 3. Frontend: Bar fill calculation -- [src/App.tsx](src/App.tsx)
+
+In the `cursorToViewModel` and Claude adapter functions, when building `BarConfig`:
+
+- **Usage mode**: `fill = clampFill(percent)` (current behavior)
+- **Remaining mode**: `fill = clampFill(100 - percent)`
+
+The `percent` value on the `BarConfig` stays as the raw usage percent (for tooltip/label purposes), only `fill` changes.
+
+Pass `displayMode` into the adapter functions alongside the other settings.
+
+### 4. Frontend: CSS direction -- [src/App.css](src/App.css)
+
+Currently `.bar-fill` is anchored with `bottom: 0` (fills upward). Add a CSS class `.bar-fill--remaining` that overrides to `top: 0; bottom: auto;` so the fill anchors from the top and visually "drains" downward.
+
+```css
+.bar-fill--remaining {
+  bottom: auto;
+  top: 0;
+}
+```
+
+Apply this class conditionally in the JSX when `displayMode === "remaining"`.
+
+The shimmer animation direction should also be reversed for remaining mode (sweep downward instead of upward), via a `.bar-fill--remaining.shimmer::after` override that changes the `bottom` keyframes to `top`.
+
+### 5. Color logic consideration
+
+The color thresholds (green at low usage, red at high usage) should stay based on **usage percent** in both modes. When in "remaining" mode, a nearly-empty bar will be red (high usage), which is the correct visual signal.
+
+## Files changed (summary)
+
+| File | What changes |
+|------|-------------|
+| `src-tauri/src/lib.rs` | `Settings` struct, default, menu item, event handler |
+| `src/App.tsx` | `Settings` interface, state, listener, fill calc, CSS class |
+| `src/App.css` | `.bar-fill--remaining` class, reversed shimmer |
+
+  todos: [{"id":"backend-settings","content":"Add display_mode field to Settings struct, Default impl, save/load in lib.rs"},{"id":"backend-menu","content":"Add 'Show Remaining (Juice Mode)' CheckMenuItem and wire up the menu event handler in lib.rs"},{"id":"frontend-settings","content":"Update Settings interface, add displayMode state, wire up listener and initial fetch in App.tsx"},{"id":"frontend-fill-calc","content":"Update bar fill calculation in cursorToViewModel and Claude adapter to respect displayMode"},{"id":"frontend-css","content":"Add .bar-fill--remaining CSS class with top-anchor and reversed shimmer, apply conditionally in JSX"}]
+
+### **User**
+
+1|# Progress Bar Display Mode (Usage vs Remaining)
+     2|
+     3|## Concept
+     4|
+     5|Two modes controlled by a new setting:
+     6|
+     7|- **"Usage" mode** (current behavior): Bar fills bottom-to-top as usage increases. 0% used = empty, 100% used = full.
+     8|- **"Remaining" mode** (juice draining): Bar starts full at the top and drains downward. 0% used = full bar, 100% used = empty bar. This matches the "juice" metaphor -- you see the juice level drop as you consume tokens.
+     9|
+    10|```mermaid
+    11|graph LR
+    12|  subgraph usageMode ["Usage Mode (fill up)"]
+    13|    U0["0% used: empty"] --> U50["50% used: half full"] --> U100["100% used: full"]
+    14|  end
+    15|  subgraph remainingMode ["Remaining Mode (drain down)"]
+    16|    R0["0% used: full"] --> R50["50% used: half full"] --> R100["100% used: empty"]
+    17|  end
+    18|```
+    19|
+    20|## Changes
+    21|
+    22|### 1. Backend: Settings struct and menu -- [src-tauri/src/lib.rs](src-tauri/src/lib.rs)
+    23|
+    24|**Settings struct** (~line 85): Add a new field `display_mode: String` with values `"usage"` or `"remaining"`, defaulting to `"remaining"` (the juice metaphor is the whole point of the app).
+    25|
+    26|```rust
+    27|pub struct Settings {
+    28|    pub show_plan: bool,
+    29|    pub show_on_demand: bool,
+    30|    pub show_claude_window: bool,
+    31|    pub display_mode: String, // "usage" or "remaining"
+    32|}
+    33|```
+    34|
+    35|Default:
+    36|
+    37|```rust
+    38|display_mode: "remaining".to_string(),
+    39|```
+    40|
+    41|**Menu items** (~line 1198): Add a new `CheckMenuItemBuilder` for the display mode. A checked state means "Remaining" mode is active, unchecked means "Usage" mode:
+    42|
+    43|```rust
+    44|let remaining_mode_item =
+    45|    CheckMenuItemBuilder::with_id("remaining_mode", "Show Remaining (Juice Mode)")
+    46|        .checked(settings.display_mode == "remaining")
+    47|        .build(app)?;
+    48|```
+    49|
+    50|Insert it in the submenu between the existing visibility toggles and the separator before Quit.
+    51|
+    52|**Menu event handler** (~line 1233): Handle the `"remaining_mode"` event ID -- toggle `display_mode` between `"remaining"` and `"usage"`, save, and emit.
+    53|
+    54|### 2. Frontend: Settings interface -- [src/App.tsx](src/App.tsx)
+    55|
+    56|**Settings interface** (~line 46): Add `displayMode: "usage" | "remaining"`.
+    57|
+    58|**State** (~line 215): Add `const [displayMode, setDisplayMode] = useState<"usage" | "remaining">("remaining")`.
+    59|
+    60|**Settings listener** (~line 337): Read and update `displayMode` from initial fetch and from `settings-changed` events.
+    61|
+    62|### 3. Frontend: Bar fill calculation -- [src/App.tsx](src/App.tsx)
+    63|
+    64|In the `cursorToViewModel` and Claude adapter functions, when building `BarConfig`:
+    65|
+    66|- **Usage mode**: `fill = clampFill(percent)` (current behavior)
+    67|- **Remaining mode**: `fill = clampFill(100 - percent)`
+    68|
+    69|The `percent` value on the `BarConfig` stays as the raw usage percent (for tooltip/label purposes), only `fill` changes.
+    70|
+    71|Pass `displayMode` into the adapter functions alongside the other settings.
+    72|
+    73|### 4. Frontend: CSS direction -- [src/App.css](src/App.css)
+    74|
+    75|Currently `.bar-fill` is anchored with `bottom: 0` (fills upward). Add a CSS class `.bar-fill--remaining` that overrides to `top: 0; bottom: auto;` so the fill anchors from the top and visually "drains" downward.
+    76|
+    77|```css
+    78|.bar-fill--remaining {
+    79|  bottom: auto;
+    80|  top: 0;
+    81|}
+    82|```
+    83|
+    84|Apply this class conditionally in the JSX when `displayMode === "remaining"`.
+    85|
+    86|The shimmer animation direction should also be reversed for remaining mode (sweep downward instead of upward), via a `.bar-fill--remaining.shimmer::after` override that changes the `bottom` keyframes to `top`.
+    87|
+    88|### 5. Color logic consideration
+    89|
+    90|The color thresholds (green at low usage, red at high usage) should stay based on **usage percent** in both modes. When in "remaining" mode, a nearly-empty bar will be red (high usage), which is the correct visual signal.
+    91|
+    92|## Files changed (summary)
+    93|
+    94|| File                   | What changes                                                |
+    95|| ---------------------- | ----------------------------------------------------------- |
+    96|| `src-tauri/src/lib.rs` | `Settings` struct, default, menu item, event handler        |
+    97|| `src/App.tsx`          | `Settings` interface, state, listener, fill calc, CSS class |
+    98|| `src/App.css`          | `.bar-fill--remaining` class, reversed shimmer              |
+    99|
+
+
+
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Let me start by reading the files I need to edit.
+[Tool: TodoWrite]
+  todos: [{"id":"backend-settings","content":"Add display_mode field to Settings struct, Default impl, save/load in lib.rs","status":"in_progress"},{"id":"backend-menu","content":"Add 'Show Remaining (Juice Mode)' CheckMenuItem and wire up the menu event handler in lib.rs","status":"pending"},{"id":"frontend-settings","content":"Update Settings interface, add displayMode state, wire up listener and initial fetch in App.tsx","status":"pending"},{"id":"frontend-fill-calc","content":"Update bar fill calculation in cursorToViewModel and Claude adapter to respect displayMode","status":"pending"},{"id":"frontend-css","content":"Add .bar-fill--remaining CSS class with top-anchor and reversed shimmer, apply conditionally in JSX","status":"pending"}]
+  merge: true
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src-tauri/src/lib.rs
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] Now I have full context. Let me implement the changes step by step:
+
+1. Backend: Add `display_mode` to Settings struct
+2. Backend: Add menu item and event handler
+3. Frontend: Update Settings interface, state, listener
+4. Frontend: Update fill calculation
+5. Frontend: Add CSS class
+
+Let me start with the backend changes in lib.rs.
+Good, I have full context on all three files. Let me start implementing.
+
+**Step 1: Backend Settings struct** -- add `display_mode` field and update default.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src-tauri/src/lib.rs
+  old_string: pub struct Settings {
+    pub show_plan: bool,
+    pub show_on_demand: bool,
+    pub show_claude_window: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            show_plan: true,
+            show_on_demand: true,
+            show_claude_window: false,
+        }
+    }
+}
+  new_string: pub struct Settings {
+    pub show_plan: bool,
+    pub show_on_demand: bool,
+    pub show_claude_window: bool,
+    #[serde(default = "default_display_mode")]
+    pub display_mode: String, // "usage" or "remaining"
+}
+
+fn default_display_mode() -> String {
+    "remaining".to_string()
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            show_plan: true,
+            show_on_demand: true,
+            show_claude_window: false,
+            display_mode: default_display_mode(),
+        }
+    }
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: TodoWrite]
+  todos: [{"id":"backend-settings","content":"Add display_mode field to Settings struct, Default impl, save/load in lib.rs","status":"completed"},{"id":"backend-menu","content":"Add 'Show Remaining (Juice Mode)' CheckMenuItem and wire up the menu event handler in lib.rs","status":"in_progress"}]
+  merge: true
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+**Step 2: Backend menu** -- add the CheckMenuItem and wire up the event handler.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src-tauri/src/lib.rs
+  old_string:             let show_claude_item =
+                CheckMenuItemBuilder::with_id("show_claude", "Show Claude Usage")
+                    .checked(settings.show_claude_window)
+                    .build(app)?;
+
+            let about_item = PredefinedMenuItem::about(app, Some("About Token Juice"), None)?;
+            let quit_item = PredefinedMenuItem::quit(app, Some("Quit Token Juice"))?;
+
+            let app_menu = SubmenuBuilder::new(app, "Token Juice")
+                .item(&about_item)
+                .separator()
+                .item(&show_plan_item)
+                .item(&show_od_item)
+                .item(&show_claude_item)
+                .separator()
+                .item(&quit_item)
+                .build()?;
+  new_string:             let show_claude_item =
+                CheckMenuItemBuilder::with_id("show_claude", "Show Claude Usage")
+                    .checked(settings.show_claude_window)
+                    .build(app)?;
+            let remaining_mode_item =
+                CheckMenuItemBuilder::with_id("remaining_mode", "Show Remaining (Juice Mode)")
+                    .checked(settings.display_mode == "remaining")
+                    .build(app)?;
+
+            let about_item = PredefinedMenuItem::about(app, Some("About Token Juice"), None)?;
+            let quit_item = PredefinedMenuItem::quit(app, Some("Quit Token Juice"))?;
+
+            let app_menu = SubmenuBuilder::new(app, "Token Juice")
+                .item(&about_item)
+                .separator()
+                .item(&show_plan_item)
+                .item(&show_od_item)
+                .item(&show_claude_item)
+                .separator()
+                .item(&remaining_mode_item)
+                .separator()
+                .item(&quit_item)
+                .build()?;
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now wire up the event handler to toggle `display_mode`.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src-tauri/src/lib.rs
+  old_string:             app.on_menu_event(move |app_handle, event| {
+                let id = event.id().0.as_str();
+                match id {
+                    "show_plan" | "show_on_demand" | "show_claude" => {
+                        let state = app_handle.state::<Mutex<Settings>>();
+                        let mut settings = state.lock().unwrap();
+                        if id == "show_plan" {
+                            settings.show_plan =
+                                show_plan_item.is_checked().unwrap_or(true);
+                        } else if id == "show_claude" {
+                            settings.show_claude_window =
+                                show_claude_item.is_checked().unwrap_or(false);
+                            if settings.show_claude_window {
+                                let _ = create_claude_window(app_handle);
+                            } else if let Some(window) = app_handle.get_webview_window("claude") {
+                                let _ = window.close();
+                            }
+                        } else {
+                            settings.show_on_demand =
+                                show_od_item.is_checked().unwrap_or(true);
+                        }
+                        save_settings(&settings);
+                        let _ = app_handle.emit("settings-changed", settings.clone());
+                        println!(
+                            "[token-juice] Settings changed: show_plan={}, show_on_demand={}, show_claude_window={}",
+                            settings.show_plan, settings.show_on_demand, settings.show_claude_window
+                        );
+                    }
+                    _ => {}
+                }
+            });
+  new_string:             app.on_menu_event(move |app_handle, event| {
+                let id = event.id().0.as_str();
+                match id {
+                    "show_plan" | "show_on_demand" | "show_claude" | "remaining_mode" => {
+                        let state = app_handle.state::<Mutex<Settings>>();
+                        let mut settings = state.lock().unwrap();
+                        if id == "show_plan" {
+                            settings.show_plan =
+                                show_plan_item.is_checked().unwrap_or(true);
+                        } else if id == "show_claude" {
+                            settings.show_claude_window =
+                                show_claude_item.is_checked().unwrap_or(false);
+                            if settings.show_claude_window {
+                                let _ = create_claude_window(app_handle);
+                            } else if let Some(window) = app_handle.get_webview_window("claude") {
+                                let _ = window.close();
+                            }
+                        } else if id == "remaining_mode" {
+                            let checked = remaining_mode_item.is_checked().unwrap_or(true);
+                            settings.display_mode = if checked {
+                                "remaining".to_string()
+                            } else {
+                                "usage".to_string()
+                            };
+                        } else {
+                            settings.show_on_demand =
+                                show_od_item.is_checked().unwrap_or(true);
+                        }
+                        save_settings(&settings);
+                        let _ = app_handle.emit("settings-changed", settings.clone());
+                        println!(
+                            "[token-juice] Settings changed: show_plan={}, show_on_demand={}, show_claude_window={}, display_mode={}",
+                            settings.show_plan, settings.show_on_demand, settings.show_claude_window, settings.display_mode
+                        );
+                    }
+                    _ => {}
+                }
+            });
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: TodoWrite]
+  todos: [{"id":"backend-menu","content":"Add 'Show Remaining (Juice Mode)' CheckMenuItem and wire up the menu event handler in lib.rs","status":"completed"},{"id":"frontend-settings","content":"Update Settings interface, add displayMode state, wire up listener and initial fetch in App.tsx","status":"in_progress"}]
+  merge: true
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+**Step 3: Frontend Settings** -- update the interface, add state, wire up listener.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string: interface Settings {
+  showPlan: boolean;
+  showOnDemand: boolean;
+}
+  new_string: type DisplayMode = "usage" | "remaining";
+
+interface Settings {
+  showPlan: boolean;
+  showOnDemand: boolean;
+  displayMode: DisplayMode;
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Add `displayMode` state next to the other settings state variables.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:   // --- Cursor settings ---
+  const [showPlan, setShowPlan] = useState(true);
+  const [showOnDemand, setShowOnDemand] = useState(true);
+  new_string:   // --- Settings ---
+  const [showPlan, setShowPlan] = useState(true);
+  const [showOnDemand, setShowOnDemand] = useState(true);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("remaining");
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Wire up the initial fetch and listener to read `displayMode`.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:   useEffect(() => {
+    if (provider === "claude") return;
+    invoke<Settings>("get_settings").then((s) => {
+      setShowPlan(s.showPlan);
+      setShowOnDemand(s.showOnDemand);
+    });
+
+    const unlisten = listen<Settings>("settings-changed", (event) => {
+      setShowPlan(event.payload.showPlan);
+      setShowOnDemand(event.payload.showOnDemand);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [provider]);
+  new_string:   useEffect(() => {
+    invoke<Settings>("get_settings").then((s) => {
+      setShowPlan(s.showPlan);
+      setShowOnDemand(s.showOnDemand);
+      setDisplayMode(s.displayMode ?? "remaining");
+    });
+
+    const unlisten = listen<Settings>("settings-changed", (event) => {
+      setShowPlan(event.payload.showPlan);
+      setShowOnDemand(event.payload.showOnDemand);
+      setDisplayMode(event.payload.displayMode ?? "remaining");
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [provider]);
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: TodoWrite]
+  todos: [{"id":"frontend-settings","content":"Update Settings interface, add displayMode state, wire up listener and initial fetch in App.tsx","status":"completed"},{"id":"frontend-fill-calc","content":"Update bar fill calculation in cursorToViewModel and Claude adapter to respect displayMode","status":"in_progress"}]
+  merge: true
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+**Step 4: Frontend fill calculation** -- update both adapters and the BarViewModel to carry `displayMode`, then update the view model builder call.
+
+First, add `displayMode` to `BarViewModel` so the rendering layer knows which CSS class to apply.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string: interface BarViewModel {
+  logo: string; // imported SVG path
+  primaryBar: BarConfig | null;
+  secondaryBar: BarConfig | null;
+  showBothBars: boolean;
+  planLabel: string | null; // membership type / plan name
+  spendDelta: string | null; // floating cost delta (Cursor only)
+}
+  new_string: interface BarViewModel {
+  logo: string; // imported SVG path
+  primaryBar: BarConfig | null;
+  secondaryBar: BarConfig | null;
+  showBothBars: boolean;
+  planLabel: string | null; // membership type / plan name
+  spendDelta: string | null; // floating cost delta (Cursor only)
+  displayMode: DisplayMode; // "usage" or "remaining"
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now update `cursorToViewModel` to accept `displayMode` and use it for fill calculation.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string: function cursorToViewModel(
+  data: UsageData,
+  settings: { showPlan: boolean; showOnDemand: boolean },
+  delta: string | null,
+): BarViewModel {
+  const planPercent = data.percentUsed;
+  const hasOnDemand =
+    data.onDemandLimitUsd != null && data.onDemandLimitUsd > 0;
+  const odPercent = data.onDemandPercentUsed;
+
+  const primaryBar: BarConfig | null = settings.showPlan
+    ? {
+        percent: planPercent,
+        fill: clampFill(planPercent),
+        label: "P",
+        color: getPlanColor(planPercent),
+        glow: getPlanGlow(planPercent),
+      }
+    : null;
+
+  const secondaryBar: BarConfig | null =
+    settings.showOnDemand && hasOnDemand
+      ? {
+          percent: odPercent,
+          fill: clampFill(odPercent),
+          label: "D",
+          color: getOdColor(odPercent),
+          glow: getOdGlow(odPercent),
+        }
+      : null;
+
+  const showBothBars = primaryBar != null && secondaryBar != null;
+
+  return {
+    logo: cursorLogo,
+    primaryBar,
+    secondaryBar,
+    showBothBars,
+    planLabel: data.membershipType ?? null,
+    spendDelta: delta,
+  };
+}
+  new_string: function computeFill(percent: number, mode: DisplayMode): number {
+  return mode === "remaining"
+    ? clampFill(100 - percent)
+    : clampFill(percent);
+}
+
+function cursorToViewModel(
+  data: UsageData,
+  settings: { showPlan: boolean; showOnDemand: boolean; displayMode: DisplayMode },
+  delta: string | null,
+): BarViewModel {
+  const planPercent = data.percentUsed;
+  const hasOnDemand =
+    data.onDemandLimitUsd != null && data.onDemandLimitUsd > 0;
+  const odPercent = data.onDemandPercentUsed;
+
+  const primaryBar: BarConfig | null = settings.showPlan
+    ? {
+        percent: planPercent,
+        fill: computeFill(planPercent, settings.displayMode),
+        label: "P",
+        color: getPlanColor(planPercent),
+        glow: getPlanGlow(planPercent),
+      }
+    : null;
+
+  const secondaryBar: BarConfig | null =
+    settings.showOnDemand && hasOnDemand
+      ? {
+          percent: odPercent,
+          fill: computeFill(odPercent, settings.displayMode),
+          label: "D",
+          color: getOdColor(odPercent),
+          glow: getOdGlow(odPercent),
+        }
+      : null;
+
+  const showBothBars = primaryBar != null && secondaryBar != null;
+
+  return {
+    logo: cursorLogo,
+    primaryBar,
+    secondaryBar,
+    showBothBars,
+    planLabel: data.membershipType ?? null,
+    spendDelta: delta,
+    displayMode: settings.displayMode,
+  };
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now update the Claude adapter.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string: function claudeToViewModel(data: ClaudeUsageData): BarViewModel {
+  const sessionPercent = data.sessionPercentUsed;
+  const weeklyPercent = data.weeklyPercentUsed;
+
+  return {
+    logo: claudeLogo,
+    primaryBar: {
+      percent: sessionPercent,
+      fill: clampFill(sessionPercent),
+      label: "5h",
+      color: getClaudeColor(sessionPercent),
+      glow: getClaudeGlow(sessionPercent),
+    },
+    secondaryBar: {
+      percent: weeklyPercent,
+      fill: clampFill(weeklyPercent),
+      label: "Week",
+      color: getClaudeColor(weeklyPercent),
+      glow: getClaudeGlow(weeklyPercent),
+    },
+    showBothBars: true,
+    planLabel: data.planType ?? "claude",
+    spendDelta: null, // Claude doesn't track dollar spend deltas
+  };
+}
+  new_string: function claudeToViewModel(data: ClaudeUsageData, mode: DisplayMode): BarViewModel {
+  const sessionPercent = data.sessionPercentUsed;
+  const weeklyPercent = data.weeklyPercentUsed;
+
+  return {
+    logo: claudeLogo,
+    primaryBar: {
+      percent: sessionPercent,
+      fill: computeFill(sessionPercent, mode),
+      label: "5h",
+      color: getClaudeColor(sessionPercent),
+      glow: getClaudeGlow(sessionPercent),
+    },
+    secondaryBar: {
+      percent: weeklyPercent,
+      fill: computeFill(weeklyPercent, mode),
+      label: "Week",
+      color: getClaudeColor(weeklyPercent),
+      glow: getClaudeGlow(weeklyPercent),
+    },
+    showBothBars: true,
+    planLabel: data.planType ?? "claude",
+    spendDelta: null, // Claude doesn't track dollar spend deltas
+    displayMode: mode,
+  };
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now update the `useMemo` call where the view models are built so it passes `displayMode`.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:   const vm: BarViewModel | null = useMemo(() => {
+    if (provider === "claude" && claudeUsage) {
+      return claudeToViewModel(claudeUsage);
+    }
+    if (provider === "cursor" && cursorUsage) {
+      return cursorToViewModel(
+        cursorUsage,
+        { showPlan, showOnDemand },
+        spendDelta,
+      );
+    }
+    return null;
+  }, [provider, cursorUsage, claudeUsage, showPlan, showOnDemand, spendDelta]);
+  new_string:   const vm: BarViewModel | null = useMemo(() => {
+    if (provider === "claude" && claudeUsage) {
+      return claudeToViewModel(claudeUsage, displayMode);
+    }
+    if (provider === "cursor" && cursorUsage) {
+      return cursorToViewModel(
+        cursorUsage,
+        { showPlan, showOnDemand, displayMode },
+        spendDelta,
+      );
+    }
+    return null;
+  }, [provider, cursorUsage, claudeUsage, showPlan, showOnDemand, displayMode, spendDelta]);
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: TodoWrite]
+  todos: [{"id":"frontend-fill-calc","content":"Update bar fill calculation in cursorToViewModel and Claude adapter to respect displayMode","status":"completed"},{"id":"frontend-css","content":"Add .bar-fill--remaining CSS class with top-anchor and reversed shimmer, apply conditionally in JSX","status":"in_progress"}]
+  merge: true
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+**Step 5: CSS and JSX** -- add the `.bar-fill--remaining` class with reversed anchor and shimmer, then apply it conditionally in the JSX.
+
+First, the CSS:
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  old_string: /* Glass highlight - vertical light strip on the left */
+  new_string: /* Remaining mode - anchor fill to top so juice drains downward */
+.bar-fill--remaining {
+  bottom: auto;
+  top: 0;
+}
+
+/* Glass highlight - vertical light strip on the left */
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now add the reversed shimmer for remaining mode (sweep downward instead of upward):
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  old_string: .bar-fill.shimmer::after {
+  animation: shimmer-sweep 1s ease-out forwards;
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    bottom: -40%;
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    bottom: 100%;
+    opacity: 0;
+  }
+}
+  new_string: .bar-fill.shimmer::after {
+  animation: shimmer-sweep 1s ease-out forwards;
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    bottom: -40%;
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    bottom: 100%;
+    opacity: 0;
+  }
+}
+
+/* Remaining mode: shimmer sweeps downward */
+.bar-fill--remaining::after {
+  bottom: auto;
+  top: -40%;
+}
+
+.bar-fill--remaining.shimmer::after {
+  animation: shimmer-sweep-down 1s ease-out forwards;
+}
+
+@keyframes shimmer-sweep-down {
+  0% {
+    top: -40%;
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now apply the CSS class conditionally in the JSX. I need to add `bar-fill--remaining` when `vm.displayMode === "remaining"`.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:   const shimmerClass = animating ? "shimmer" : "";
+  const bounceClass = animating ? "bounce" : "";
+  const planPulseClass = planPulsing ? "pulse-glow" : "";
+  const odPulseClass = odPulsing ? "pulse-glow" : "";
+  new_string:   const shimmerClass = animating ? "shimmer" : "";
+  const bounceClass = animating ? "bounce" : "";
+  const planPulseClass = planPulsing ? "pulse-glow" : "";
+  const odPulseClass = odPulsing ? "pulse-glow" : "";
+  const remainingClass = vm?.displayMode === "remaining" ? "bar-fill--remaining" : "";
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now apply the `remainingClass` to both bar-fill elements:
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:                   <div
+                    key={`plan-${refreshKey}`}
+                    className={`bar-fill ${shimmerClass} ${planPulseClass}`}
+                    data-tauri-drag-region
+                    style={{
+                      height: `${vm.primaryBar.fill}%`,
+                      backgroundColor: vm.primaryBar.color,
+                      boxShadow: `0 0 10px ${vm.primaryBar.glow}, 0 0 4px ${vm.primaryBar.glow}`,
+                    }}
+                  />
+  new_string:                   <div
+                    key={`plan-${refreshKey}`}
+                    className={`bar-fill ${remainingClass} ${shimmerClass} ${planPulseClass}`}
+                    data-tauri-drag-region
+                    style={{
+                      height: `${vm.primaryBar.fill}%`,
+                      backgroundColor: vm.primaryBar.color,
+                      boxShadow: `0 0 10px ${vm.primaryBar.glow}, 0 0 4px ${vm.primaryBar.glow}`,
+                    }}
+                  />
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:                   <div
+                    key={`od-${refreshKey}`}
+                    className={`bar-fill ${shimmerClass} ${odPulseClass}`}
+                    data-tauri-drag-region
+                    style={{
+                      height: `${vm.secondaryBar.fill}%`,
+                      backgroundColor: vm.secondaryBar.color,
+                      boxShadow: `0 0 10px ${vm.secondaryBar.glow}, 0 0 4px ${vm.secondaryBar.glow}`,
+                    }}
+                  />
+  new_string:                   <div
+                    key={`od-${refreshKey}`}
+                    className={`bar-fill ${remainingClass} ${shimmerClass} ${odPulseClass}`}
+                    data-tauri-drag-region
+                    style={{
+                      height: `${vm.secondaryBar.fill}%`,
+                      backgroundColor: vm.secondaryBar.color,
+                      boxShadow: `0 0 10px ${vm.secondaryBar.glow}, 0 0 4px ${vm.secondaryBar.glow}`,
+                    }}
+                  />
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Now let me verify everything looks correct by checking for linter errors.
+[Tool: ReadLints]
+  paths: ["/Users/lnmunhoz/projects/cursor-juice/src/App.tsx","/Users/lnmunhoz/projects/cursor-juice/src/App.css"]
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Clean. Let me do a final review of the key sections to make sure everything is consistent.
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  offset: 46
+  limit: 10
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  offset: 117
+  limit: 55
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  offset: 340
+  limit: 20
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Everything looks correct. Let me mark the final todo as complete.
+[Tool: TodoWrite]
+  todos: [{"id":"frontend-css","content":"Add .bar-fill--remaining CSS class with top-anchor and reversed shimmer, apply conditionally in JSX","status":"completed"}]
+  merge: true
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+All done. Here's a summary of what was implemented across the three files:
+
+**`src-tauri/src/lib.rs`** (Backend)
+- Added `display_mode: String` field to the `Settings` struct with `#[serde(default)]` for backward compatibility with existing settings files
+- Default value is `"remaining"` (the juice metaphor)
+- Added a "Show Remaining (Juice Mode)" `CheckMenuItem` in the app menu, placed between the visibility toggles and the Quit item
+- Wired up the `"remaining_mode"` menu event to toggle `display_mode` between `"remaining"` and `"usage"`, save, and emit to the frontend
+
+**`src/App.tsx`** (Frontend)
+- Added `DisplayMode` type (`"usage" | "remaining"`) and `displayMode` to the `Settings` interface
+- Added `displayMode` state variable (defaults to `"remaining"`)
+- Settings fetch and listener now read `displayMode` (with `?? "remaining"` fallback)
+- Added `computeFill()` helper: in "remaining" mode it returns `100 - percent`, in "usage" mode it returns `percent` directly
+- Both `cursorToViewModel` and `claudeToViewModel` now use `computeFill()` instead of `clampFill()` directly
+- `BarViewModel` carries `displayMode` so the JSX can apply the correct CSS class
+- Both bar-fill elements conditionally get the `bar-fill--remaining` class
+
+**`src/App.css`** (Styles)
+- Added `.bar-fill--remaining` class that overrides `bottom: 0` to `top: 0` so the fill anchors from the top and drains downward
+- Added reversed shimmer animation (`shimmer-sweep-down`) that sweeps top-to-bottom instead of bottom-to-top for the remaining mode
+
+### **User**
+
+[Image]
+<image_files>
+The following images were provdied by the user and saved to the workspace for future use:
+1. /Users/lnmunhoz/.cursor/projects/Users-lnmunhoz-projects-cursor-juice/assets/image-5d2118bd-e460-4946-a5ec-4e531728782c.png
+
+These images can be copied for use in other locations.
+</image_files>
+
+As you can see, okay, I have the juice mode enabled, but the progress bar is filling from the top, and then it should be like, maybe we need to reverse the CSS or something, so it's filled, but the empty part should be on top for the reverse mode.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Thinking] The user is saying that in "remaining" (juice) mode, the bar should look like it's full from the bottom and the empty part should be at the top. Right now with `top: 0`, the filled portion anchors from the top and the empty space is at the bottom. But the juice metaphor should be: the liquid settles at the bottom (gravity), so the filled part should stay at the bottom, and as usage increases, the level drops from the top.
+
+So actually, the current default CSS (`bottom: 0`) is correct for the remaining mode too! The fill should stay anchored at the bottom. The only thing that needs to change between the modes is the fill calculation (which we already did: `100 - percent` for remaining mode).
+
+
+Both modes should use `bottom: 0` anchoring, so that CSS class changing to `top: 0` is actually breaking the remaining mode visualization. The real issue is the bars are anchored from the top when they should hang from the bottom like liquid in a glass—gravity should pull the fill down with empty space above. Removing the `top: 0; bottom: auto;` override and keeping the default `bottom: 0` positioning will fix this, and the fill percentage calculation is already correct. For the shimmer animation, I should consider whether it needs adjustment too since the bar orientation is changing. I'm realizing I don't actually need the `.bar-fill--remaining` class at all since the fill calculation handles the direction change, so I'll just remove it from both the CSS and JSX to keep things clean.
+I see the issue. The filled part is anchored from the top, but it should stay anchored from the **bottom** (like real juice in a glass -- gravity pulls it down, empty space appears at the top as it drains). The fill calculation (`100 - percent`) is already correct; the CSS override to `top: 0` was the mistake. Let me fix it.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  old_string: /* Remaining mode - anchor fill to top so juice drains downward */
+.bar-fill--remaining {
+  bottom: auto;
+  top: 0;
+}
+
+/* Glass highlight - vertical light strip on the left */
+  new_string: /* Glass highlight - vertical light strip on the left */
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.css
+  old_string: /* Remaining mode: shimmer sweeps downward */
+.bar-fill--remaining::after {
+  bottom: auto;
+  top: -40%;
+}
+
+.bar-fill--remaining.shimmer::after {
+  animation: shimmer-sweep-down 1s ease-out forwards;
+}
+
+@keyframes shimmer-sweep-down {
+  0% {
+    top: -40%;
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+  new_string:
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+And remove the now-unnecessary `remainingClass` from the JSX since no CSS differentiation is needed -- the fill calculation alone handles both modes.
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:   const shimmerClass = animating ? "shimmer" : "";
+  const bounceClass = animating ? "bounce" : "";
+  const planPulseClass = planPulsing ? "pulse-glow" : "";
+  const odPulseClass = odPulsing ? "pulse-glow" : "";
+  const remainingClass = vm?.displayMode === "remaining" ? "bar-fill--remaining" : "";
+  new_string:   const shimmerClass = animating ? "shimmer" : "";
+  const bounceClass = animating ? "bounce" : "";
+  const planPulseClass = planPulsing ? "pulse-glow" : "";
+  const odPulseClass = odPulsing ? "pulse-glow" : "";
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:                     className={`bar-fill ${remainingClass} ${shimmerClass} ${planPulseClass}`}
+  new_string:                     className={`bar-fill ${shimmerClass} ${planPulseClass}`}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:                     className={`bar-fill ${remainingClass} ${shimmerClass} ${odPulseClass}`}
+  new_string:                     className={`bar-fill ${shimmerClass} ${odPulseClass}`}
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+The fix is straightforward: the bar fill stays anchored at `bottom: 0` (the default) in both modes. The `computeFill()` function already does the right math -- in "remaining" mode it computes `100 - percent`, so at 19.7% usage you get an 80.3% tall bar filling from the bottom, with the empty space at the top. That's the juice-in-a-glass effect: as usage increases, the juice level drops from the top.
+
+### **User**
+
+When we switch to the juice mode, we should do a calculation to show the percentages. We should calculate 100% minus how much we use. That's what we should show in the percentages for the juice mode.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+That's a small change -- in the bar labels we currently always show `percent` (the raw usage value), but in "remaining" (juice) mode we should show `100 - percent` instead. Let me confirm the exact line.
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  offset: 430
+  limit: 50
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  offset: 55
+  limit: 20
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Got it. The `percent` field on `BarConfig` currently always holds the raw usage percentage, and that's what's displayed in the labels (lines 449 and 479). The simplest fix is to make `percent` reflect the display value -- in remaining mode it should be `100 - rawPercent`.
+[Tool: CreatePlan]
+  name: Juice mode percent labels
+  overview: In remaining (juice) mode, the percentage labels below each bar should show `100 - usage%` (i.e. how much is left) instead of the raw usage percent.
+  plan: # Show Remaining Percentage in Juice Mode Labels
+
+Single file change in [src/App.tsx](src/App.tsx).
+
+The `BarConfig.percent` field is what gets displayed as the label text (lines 449, 479: `vm.primaryBar.percent.toFixed(1)%`). Currently the adapters always set `percent` to the raw usage value. The fix is to run it through the same display-mode logic used for `fill`.
+
+In both `cursorToViewModel` and `claudeToViewModel`, change every `percent:` assignment from the raw value to a computed value using the existing `computeFill` helper (which already does `mode === "remaining" ? 100 - p : p`):
+
+- `percent: planPercent` --> `percent: computeFill(planPercent, settings.displayMode)`
+- `percent: odPercent` --> `percent: computeFill(odPercent, settings.displayMode)`
+- `percent: sessionPercent` --> `percent: computeFill(sessionPercent, mode)`
+- `percent: weeklyPercent` --> `percent: computeFill(weeklyPercent, mode)`
+
+This reuses `computeFill` which already clamps 0-100. No CSS or backend changes needed.
+
+### **User**
+
+1|# Show Remaining Percentage in Juice Mode Labels
+     2|
+     3|Single file change in [src/App.tsx](src/App.tsx).
+     4|
+     5|The `BarConfig.percent` field is what gets displayed as the label text (lines 449, 479: `vm.primaryBar.percent.toFixed(1)%`). Currently the adapters always set `percent` to the raw usage value. The fix is to run it through the same display-mode logic used for `fill`.
+     6|
+     7|In both `cursorToViewModel` and `claudeToViewModel`, change every `percent:` assignment from the raw value to a computed value using the existing `computeFill` helper (which already does `mode === "remaining" ? 100 - p : p`):
+     8|
+     9|- `percent: planPercent` --> `percent: computeFill(planPercent, settings.displayMode)`
+    10|- `percent: odPercent` --> `percent: computeFill(odPercent, settings.displayMode)`
+    11|- `percent: sessionPercent` --> `percent: computeFill(sessionPercent, mode)`
+    12|- `percent: weeklyPercent` --> `percent: computeFill(weeklyPercent, mode)`
+    13|
+    14|This reuses `computeFill` which already clamps 0-100. No CSS or backend changes needed.
+    15|
+
+
+
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: Read]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  offset: 131
+  limit: 70
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: TodoWrite]
+  todos: [{"id":"cursor-percent","content":"Update percent in cursorToViewModel to use computeFill","status":"in_progress"},{"id":"claude-percent","content":"Update percent in claudeToViewModel to use computeFill","status":"pending"}]
+  merge: false
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:         percent: planPercent,
+        fill: computeFill(planPercent, settings.displayMode),
+  new_string:         percent: computeFill(planPercent, settings.displayMode),
+        fill: computeFill(planPercent, settings.displayMode),
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:           percent: odPercent,
+          fill: computeFill(odPercent, settings.displayMode),
+  new_string:           percent: computeFill(odPercent, settings.displayMode),
+          fill: computeFill(odPercent, settings.displayMode),
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: TodoWrite]
+  todos: [{"id":"cursor-percent","content":"Update percent in cursorToViewModel to use computeFill","status":"completed"},{"id":"claude-percent","content":"Update percent in claudeToViewModel to use computeFill","status":"in_progress"}]
+  merge: true
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:       percent: sessionPercent,
+      fill: computeFill(sessionPercent, mode),
+  new_string:       percent: computeFill(sessionPercent, mode),
+      fill: computeFill(sessionPercent, mode),
+[Tool: StrReplace]
+  path: /Users/lnmunhoz/projects/cursor-juice/src/App.tsx
+  old_string:       percent: weeklyPercent,
+      fill: computeFill(weeklyPercent, mode),
+  new_string:       percent: computeFill(weeklyPercent, mode),
+      fill: computeFill(weeklyPercent, mode),
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+[Tool: TodoWrite]
+  todos: [{"id":"claude-percent","content":"Update percent in claudeToViewModel to use computeFill","status":"completed"}]
+  merge: true
+
+### **Assistant** `claude-4.6-opus-high-thinking`
+
+Done. All four `percent:` assignments now go through `computeFill`, so in juice (remaining) mode the labels will show `100 - usage%` -- e.g. 19.7% usage will display as 80.3% remaining.
+

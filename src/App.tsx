@@ -43,9 +43,12 @@ interface ClaudeUsageData {
 
 type Provider = "cursor" | "claude";
 
+type DisplayMode = "usage" | "remaining";
+
 interface Settings {
   showPlan: boolean;
   showOnDemand: boolean;
+  displayMode: DisplayMode;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,6 +70,7 @@ interface BarViewModel {
   showBothBars: boolean;
   planLabel: string | null; // membership type / plan name
   spendDelta: string | null; // floating cost delta (Cursor only)
+  displayMode: DisplayMode; // "usage" or "remaining"
 }
 
 // ---------------------------------------------------------------------------
@@ -118,9 +122,15 @@ function clampFill(p: number) {
 // Adapter: Cursor → BarViewModel
 // ---------------------------------------------------------------------------
 
+function computeFill(percent: number, mode: DisplayMode): number {
+  return mode === "remaining"
+    ? clampFill(100 - percent)
+    : clampFill(percent);
+}
+
 function cursorToViewModel(
   data: UsageData,
-  settings: { showPlan: boolean; showOnDemand: boolean },
+  settings: { showPlan: boolean; showOnDemand: boolean; displayMode: DisplayMode },
   delta: string | null,
 ): BarViewModel {
   const planPercent = data.percentUsed;
@@ -130,8 +140,8 @@ function cursorToViewModel(
 
   const primaryBar: BarConfig | null = settings.showPlan
     ? {
-        percent: planPercent,
-        fill: clampFill(planPercent),
+        percent: computeFill(planPercent, settings.displayMode),
+        fill: computeFill(planPercent, settings.displayMode),
         label: "P",
         color: getPlanColor(planPercent),
         glow: getPlanGlow(planPercent),
@@ -141,8 +151,8 @@ function cursorToViewModel(
   const secondaryBar: BarConfig | null =
     settings.showOnDemand && hasOnDemand
       ? {
-          percent: odPercent,
-          fill: clampFill(odPercent),
+          percent: computeFill(odPercent, settings.displayMode),
+          fill: computeFill(odPercent, settings.displayMode),
           label: "D",
           color: getOdColor(odPercent),
           glow: getOdGlow(odPercent),
@@ -158,6 +168,7 @@ function cursorToViewModel(
     showBothBars,
     planLabel: data.membershipType ?? null,
     spendDelta: delta,
+    displayMode: settings.displayMode,
   };
 }
 
@@ -165,22 +176,22 @@ function cursorToViewModel(
 // Adapter: Claude → BarViewModel
 // ---------------------------------------------------------------------------
 
-function claudeToViewModel(data: ClaudeUsageData): BarViewModel {
+function claudeToViewModel(data: ClaudeUsageData, mode: DisplayMode): BarViewModel {
   const sessionPercent = data.sessionPercentUsed;
   const weeklyPercent = data.weeklyPercentUsed;
 
   return {
     logo: claudeLogo,
     primaryBar: {
-      percent: sessionPercent,
-      fill: clampFill(sessionPercent),
+      percent: computeFill(sessionPercent, mode),
+      fill: computeFill(sessionPercent, mode),
       label: "5h",
       color: getClaudeColor(sessionPercent),
       glow: getClaudeGlow(sessionPercent),
     },
     secondaryBar: {
-      percent: weeklyPercent,
-      fill: clampFill(weeklyPercent),
+      percent: computeFill(weeklyPercent, mode),
+      fill: computeFill(weeklyPercent, mode),
       label: "Week",
       color: getClaudeColor(weeklyPercent),
       glow: getClaudeGlow(weeklyPercent),
@@ -188,6 +199,7 @@ function claudeToViewModel(data: ClaudeUsageData): BarViewModel {
     showBothBars: true,
     planLabel: data.planType ?? "claude",
     spendDelta: null, // Claude doesn't track dollar spend deltas
+    displayMode: mode,
   };
 }
 
@@ -212,9 +224,10 @@ function App() {
   const [planPulsing, setPlanPulsing] = useState(false);
   const [odPulsing, setOdPulsing] = useState(false);
 
-  // --- Cursor settings ---
+  // --- Settings ---
   const [showPlan, setShowPlan] = useState(true);
   const [showOnDemand, setShowOnDemand] = useState(true);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("remaining");
 
   // --- Delta tracking refs ---
   const isFirstLoad = useRef(true);
@@ -335,15 +348,16 @@ function App() {
   }, [fetchUsage, provider]);
 
   useEffect(() => {
-    if (provider === "claude") return;
     invoke<Settings>("get_settings").then((s) => {
       setShowPlan(s.showPlan);
       setShowOnDemand(s.showOnDemand);
+      setDisplayMode(s.displayMode ?? "remaining");
     });
 
     const unlisten = listen<Settings>("settings-changed", (event) => {
       setShowPlan(event.payload.showPlan);
       setShowOnDemand(event.payload.showOnDemand);
+      setDisplayMode(event.payload.displayMode ?? "remaining");
     });
 
     return () => {
@@ -357,17 +371,17 @@ function App() {
 
   const vm: BarViewModel | null = useMemo(() => {
     if (provider === "claude" && claudeUsage) {
-      return claudeToViewModel(claudeUsage);
+      return claudeToViewModel(claudeUsage, displayMode);
     }
     if (provider === "cursor" && cursorUsage) {
       return cursorToViewModel(
         cursorUsage,
-        { showPlan, showOnDemand },
+        { showPlan, showOnDemand, displayMode },
         spendDelta,
       );
     }
     return null;
-  }, [provider, cursorUsage, claudeUsage, showPlan, showOnDemand, spendDelta]);
+  }, [provider, cursorUsage, claudeUsage, showPlan, showOnDemand, displayMode, spendDelta]);
 
   // -------------------------------------------------------------------------
   // Animation classes

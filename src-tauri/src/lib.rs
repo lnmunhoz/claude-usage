@@ -88,6 +88,12 @@ pub struct Settings {
     pub show_plan: bool,
     pub show_on_demand: bool,
     pub show_claude_window: bool,
+    #[serde(default = "default_display_mode")]
+    pub display_mode: String, // "usage" or "remaining"
+}
+
+fn default_display_mode() -> String {
+    "remaining".to_string()
 }
 
 impl Default for Settings {
@@ -96,6 +102,7 @@ impl Default for Settings {
             show_plan: true,
             show_on_demand: true,
             show_claude_window: false,
+            display_mode: default_display_mode(),
         }
     }
 }
@@ -1207,6 +1214,10 @@ pub fn run() {
                 CheckMenuItemBuilder::with_id("show_claude", "Show Claude Usage")
                     .checked(settings.show_claude_window)
                     .build(app)?;
+            let remaining_mode_item =
+                CheckMenuItemBuilder::with_id("remaining_mode", "Show Remaining (Juice Mode)")
+                    .checked(settings.display_mode == "remaining")
+                    .build(app)?;
 
             let about_item = PredefinedMenuItem::about(app, Some("About Token Juice"), None)?;
             let quit_item = PredefinedMenuItem::quit(app, Some("Quit Token Juice"))?;
@@ -1217,6 +1228,8 @@ pub fn run() {
                 .item(&show_plan_item)
                 .item(&show_od_item)
                 .item(&show_claude_item)
+                .separator()
+                .item(&remaining_mode_item)
                 .separator()
                 .item(&quit_item)
                 .build()?;
@@ -1233,7 +1246,7 @@ pub fn run() {
             app.on_menu_event(move |app_handle, event| {
                 let id = event.id().0.as_str();
                 match id {
-                    "show_plan" | "show_on_demand" | "show_claude" => {
+                    "show_plan" | "show_on_demand" | "show_claude" | "remaining_mode" => {
                         let state = app_handle.state::<Mutex<Settings>>();
                         let mut settings = state.lock().unwrap();
                         if id == "show_plan" {
@@ -1247,6 +1260,13 @@ pub fn run() {
                             } else if let Some(window) = app_handle.get_webview_window("claude") {
                                 let _ = window.close();
                             }
+                        } else if id == "remaining_mode" {
+                            let checked = remaining_mode_item.is_checked().unwrap_or(true);
+                            settings.display_mode = if checked {
+                                "remaining".to_string()
+                            } else {
+                                "usage".to_string()
+                            };
                         } else {
                             settings.show_on_demand =
                                 show_od_item.is_checked().unwrap_or(true);
@@ -1254,8 +1274,8 @@ pub fn run() {
                         save_settings(&settings);
                         let _ = app_handle.emit("settings-changed", settings.clone());
                         println!(
-                            "[token-juice] Settings changed: show_plan={}, show_on_demand={}, show_claude_window={}",
-                            settings.show_plan, settings.show_on_demand, settings.show_claude_window
+                            "[token-juice] Settings changed: show_plan={}, show_on_demand={}, show_claude_window={}, display_mode={}",
+                            settings.show_plan, settings.show_on_demand, settings.show_claude_window, settings.display_mode
                         );
                     }
                     _ => {}
