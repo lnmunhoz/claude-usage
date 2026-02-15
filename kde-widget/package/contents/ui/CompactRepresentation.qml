@@ -6,28 +6,42 @@ import org.kde.kirigami as Kirigami
 MouseArea {
     id: compactRoot
 
-    readonly property int iconSize: Math.min(width, height)
+    readonly property int barHeight: Math.min(height - 4, 24)
+    readonly property int barWidth: 5
+    readonly property int iconSz: Math.min(barHeight, 16)
 
     hoverEnabled: true
     onClicked: root.expanded = !root.expanded
 
-    // Mini bars for all enabled providers
+    // Horizontal layout: [icon][bars] [gap] [icon][bars]
     RowLayout {
         anchors.centerIn: parent
-        spacing: 1
+        height: compactRoot.barHeight
+        spacing: 3
 
-        // Cursor bars
+        // ---- Cursor group ----
+        Image {
+            visible: root.showCursor
+            Layout.preferredWidth: compactRoot.iconSz
+            Layout.preferredHeight: compactRoot.iconSz
+            Layout.alignment: Qt.AlignVCenter
+            source: "cursor-logo.svg"
+            sourceSize: Qt.size(compactRoot.iconSz, compactRoot.iconSz)
+            fillMode: Image.PreserveAspectFit
+        }
+
+        // Cursor Plan bar
         Rectangle {
             visible: root.showCursor
-            width: Math.max(3, iconSize * 0.15)
-            height: iconSize
-            radius: 1.5
+            width: compactRoot.barWidth
+            height: compactRoot.barHeight
+            radius: 2
             color: "transparent"
 
             Rectangle {
                 anchors.bottom: parent.bottom
                 width: parent.width
-                radius: 1.5
+                radius: 2
                 height: {
                     var pct = root.cursorPlanPercent
                     if (root.displayMode === "remaining") pct = 100 - pct
@@ -36,20 +50,21 @@ MouseArea {
                 color: "#818cf8"
                 Behavior on height { NumberAnimation { duration: 400 } }
             }
-            Rectangle { anchors.fill: parent; radius: 1.5; color: Kirigami.Theme.backgroundColor; opacity: 0.3; z: -1 }
+            Rectangle { anchors.fill: parent; radius: 2; color: Kirigami.Theme.backgroundColor; opacity: 0.3; z: -1 }
         }
 
+        // Cursor On-Demand bar
         Rectangle {
             visible: root.showCursor
-            width: Math.max(3, iconSize * 0.15)
-            height: iconSize
-            radius: 1.5
+            width: compactRoot.barWidth
+            height: compactRoot.barHeight
+            radius: 2
             color: "transparent"
 
             Rectangle {
                 anchors.bottom: parent.bottom
                 width: parent.width
-                radius: 1.5
+                radius: 2
                 height: {
                     var pct = root.cursorOnDemandPercent
                     if (root.displayMode === "remaining") pct = 100 - pct
@@ -58,28 +73,39 @@ MouseArea {
                 color: "#22c55e"
                 Behavior on height { NumberAnimation { duration: 400 } }
             }
-            Rectangle { anchors.fill: parent; radius: 1.5; color: Kirigami.Theme.backgroundColor; opacity: 0.3; z: -1 }
+            Rectangle { anchors.fill: parent; radius: 2; color: Kirigami.Theme.backgroundColor; opacity: 0.3; z: -1 }
         }
 
-        // Small gap between providers
+        // Gap between providers
         Item {
             visible: root.showCursor && root.showClaude
-            width: 2
+            width: 4
             height: 1
         }
 
-        // Claude bars
+        // ---- Claude group ----
+        Image {
+            visible: root.showClaude
+            Layout.preferredWidth: compactRoot.iconSz
+            Layout.preferredHeight: compactRoot.iconSz
+            Layout.alignment: Qt.AlignVCenter
+            source: "claude-logo.svg"
+            sourceSize: Qt.size(compactRoot.iconSz, compactRoot.iconSz)
+            fillMode: Image.PreserveAspectFit
+        }
+
+        // Claude 5h bar
         Rectangle {
             visible: root.showClaude
-            width: Math.max(3, iconSize * 0.15)
-            height: iconSize
-            radius: 1.5
+            width: compactRoot.barWidth
+            height: compactRoot.barHeight
+            radius: 2
             color: "transparent"
 
             Rectangle {
                 anchors.bottom: parent.bottom
                 width: parent.width
-                radius: 1.5
+                radius: 2
                 height: {
                     var pct = root.claudeSessionPercent
                     if (root.displayMode === "remaining") pct = 100 - pct
@@ -88,20 +114,21 @@ MouseArea {
                 color: "#facc15"
                 Behavior on height { NumberAnimation { duration: 400 } }
             }
-            Rectangle { anchors.fill: parent; radius: 1.5; color: Kirigami.Theme.backgroundColor; opacity: 0.3; z: -1 }
+            Rectangle { anchors.fill: parent; radius: 2; color: Kirigami.Theme.backgroundColor; opacity: 0.3; z: -1 }
         }
 
+        // Claude Weekly bar
         Rectangle {
             visible: root.showClaude
-            width: Math.max(3, iconSize * 0.15)
-            height: iconSize
-            radius: 1.5
+            width: compactRoot.barWidth
+            height: compactRoot.barHeight
+            radius: 2
             color: "transparent"
 
             Rectangle {
                 anchors.bottom: parent.bottom
                 width: parent.width
-                radius: 1.5
+                radius: 2
                 height: {
                     var pct = root.claudeWeeklyPercent
                     if (root.displayMode === "remaining") pct = 100 - pct
@@ -110,7 +137,7 @@ MouseArea {
                 color: "#f97316"
                 Behavior on height { NumberAnimation { duration: 400 } }
             }
-            Rectangle { anchors.fill: parent; radius: 1.5; color: Kirigami.Theme.backgroundColor; opacity: 0.3; z: -1 }
+            Rectangle { anchors.fill: parent; radius: 2; color: Kirigami.Theme.backgroundColor; opacity: 0.3; z: -1 }
         }
     }
 
@@ -119,10 +146,10 @@ MouseArea {
         visible: root.loading || root.errorMessage.length > 0
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: 2
-        width: 5
-        height: 5
-        radius: 2.5
+        anchors.margins: 1
+        width: 4
+        height: 4
+        radius: 2
         color: root.loading ? "#facc15" : "#ef4444"
     }
 }
