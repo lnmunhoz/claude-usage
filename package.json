@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "build:mac": "tauri build --target aarch64-apple-darwin",
-    "build:linux": "tauri build --target x86_64-unknown-linux-gnu"
+    "build:linux": "tauri build --target x86_64-unknown-linux-gnu",
+    "bump": "npm version --no-git-tag-version",
+    "version": "node -e \"const f='src-tauri/tauri.conf.json';const c=JSON.parse(require('fs').readFileSync(f));c.version=require('./package.json').version;require('fs').writeFileSync(f,JSON.stringify(c,null,2)+'\\n')\""
   },
   "dependencies": {
     "react": "^19.1.0",
