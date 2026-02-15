@@ -6,12 +6,12 @@ import org.kde.kirigami as Kirigami
 ColumnLayout {
     id: fullRoot
 
-    Layout.minimumWidth: root.showCursor && root.showClaude ? 140 : 80
+    Layout.minimumWidth: root.showCursor && root.showClaude ? 160 : 90
     Layout.minimumHeight: 200
-    Layout.preferredWidth: root.showCursor && root.showClaude ? 180 : 110
-    Layout.preferredHeight: 320
+    Layout.preferredWidth: root.showCursor && root.showClaude ? 200 : 120
+    Layout.preferredHeight: 340
 
-    spacing: 6
+    spacing: 4
 
     // ---- Loading / Error indicator ----
     Item {
@@ -36,66 +36,82 @@ ColumnLayout {
         Layout.fillHeight: true
         Layout.leftMargin: 8
         Layout.rightMargin: 8
-        spacing: 4
+        spacing: 0
 
         // ---- Cursor group ----
-        ColumnLayout {
+        Item {
             visible: root.showCursor
             Layout.fillHeight: true
             Layout.fillWidth: true
-            spacing: 2
 
-            // Provider label
-            Text {
-                Layout.alignment: Qt.AlignHCenter
-                text: "Cursor"
-                font.pixelSize: 10
-                font.bold: true
-                color: "#818cf8"
-            }
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 2
 
-            // Plan label
-            Text {
-                Layout.alignment: Qt.AlignHCenter
-                text: (root.cursorMembershipType || "---").toUpperCase()
-                font.pixelSize: 8
-                font.letterSpacing: 1
-                color: Kirigami.Theme.disabledTextColor
-            }
-
-            // Bars
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.alignment: Qt.AlignHCenter
-                spacing: 6
-
-                UsageBar {
-                    Layout.fillHeight: true
-                    percent: root.cursorPlanPercent
-                    tag: "P"
-                    barColor: "#818cf8"
-                    glowColor: "#818cf8"
-                    displayMode: root.displayMode
+                // Provider label
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: "Cursor"
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: "#818cf8"
                 }
 
-                UsageBar {
-                    Layout.fillHeight: true
-                    percent: root.cursorOnDemandPercent
-                    tag: "D"
-                    barColor: "#22c55e"
-                    glowColor: "#22c55e"
-                    displayMode: root.displayMode
+                // Plan label
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: (root.cursorMembershipType || "---").toUpperCase()
+                    font.pixelSize: 8
+                    font.letterSpacing: 1
+                    color: Kirigami.Theme.disabledTextColor
                 }
-            }
 
-            // Reset info
-            Text {
-                Layout.alignment: Qt.AlignHCenter
-                visible: root.cursorBillingCycleEnd.length > 0
-                text: "Resets " + root.cursorBillingCycleEnd.substring(0, 10)
-                font.pixelSize: 8
-                color: Kirigami.Theme.disabledTextColor
+                // Bars - centered
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+
+                    RowLayout {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        spacing: 6
+
+                        UsageBar {
+                            Layout.fillHeight: true
+                            percent: root.cursorPlanPercent
+                            tag: "P"
+                            barColor: "#818cf8"
+                            glowColor: "#818cf8"
+                            displayMode: root.displayMode
+                        }
+
+                        UsageBar {
+                            Layout.fillHeight: true
+                            percent: root.cursorOnDemandPercent
+                            tag: "D"
+                            barColor: "#22c55e"
+                            glowColor: "#22c55e"
+                            displayMode: root.displayMode
+                        }
+                    }
+                }
+
+                // Reset info (2-line fixed area for alignment)
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: root.cursorBillingCycleEnd.length > 0
+                        ? "Resets " + root.cursorBillingCycleEnd.substring(0, 10)
+                        : " "
+                    font.pixelSize: 8
+                    color: Kirigami.Theme.disabledTextColor
+                }
+                // Second line placeholder to match Claude's 2 lines
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: " "
+                    font.pixelSize: 8
+                }
             }
         }
 
@@ -104,78 +120,88 @@ ColumnLayout {
             visible: root.showCursor && root.showClaude
             Layout.fillHeight: true
             Layout.topMargin: 8
-            Layout.bottomMargin: 24
+            Layout.bottomMargin: 8
             width: 1
             color: Kirigami.Theme.separatorColor
             opacity: 0.4
         }
 
         // ---- Claude group ----
-        ColumnLayout {
+        Item {
             visible: root.showClaude
             Layout.fillHeight: true
             Layout.fillWidth: true
-            spacing: 2
 
-            // Provider label
-            Text {
-                Layout.alignment: Qt.AlignHCenter
-                text: "Claude"
-                font.pixelSize: 10
-                font.bold: true
-                color: "#f97316"
-            }
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 2
 
-            // Plan label
-            Text {
-                Layout.alignment: Qt.AlignHCenter
-                text: (root.claudePlanType || "---").toUpperCase()
-                font.pixelSize: 8
-                font.letterSpacing: 1
-                color: Kirigami.Theme.disabledTextColor
-            }
-
-            // Bars
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.alignment: Qt.AlignHCenter
-                spacing: 6
-
-                UsageBar {
-                    Layout.fillHeight: true
-                    percent: root.claudeSessionPercent
-                    tag: "5h"
-                    barColor: "#facc15"
-                    glowColor: "#facc15"
-                    displayMode: root.displayMode
+                // Provider label
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: "Claude"
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: "#f97316"
                 }
 
-                UsageBar {
-                    Layout.fillHeight: true
-                    percent: root.claudeWeeklyPercent
-                    tag: "Wk"
-                    barColor: "#f97316"
-                    glowColor: "#f97316"
-                    displayMode: root.displayMode
+                // Plan label
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: (root.claudePlanType || "---").toUpperCase()
+                    font.pixelSize: 8
+                    font.letterSpacing: 1
+                    color: Kirigami.Theme.disabledTextColor
                 }
-            }
 
-            // Reset info
-            Text {
-                Layout.alignment: Qt.AlignHCenter
-                visible: root.claudeSessionReset.length > 0
-                text: "5h: " + fullRoot.formatReset(root.claudeSessionReset)
-                font.pixelSize: 8
-                color: Kirigami.Theme.disabledTextColor
-            }
+                // Bars - centered
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
 
-            Text {
-                Layout.alignment: Qt.AlignHCenter
-                visible: root.claudeWeeklyReset.length > 0
-                text: "Wk: " + fullRoot.formatReset(root.claudeWeeklyReset)
-                font.pixelSize: 8
-                color: Kirigami.Theme.disabledTextColor
+                    RowLayout {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        spacing: 6
+
+                        UsageBar {
+                            Layout.fillHeight: true
+                            percent: root.claudeSessionPercent
+                            tag: "5h"
+                            barColor: "#facc15"
+                            glowColor: "#facc15"
+                            displayMode: root.displayMode
+                        }
+
+                        UsageBar {
+                            Layout.fillHeight: true
+                            percent: root.claudeWeeklyPercent
+                            tag: "Wk"
+                            barColor: "#f97316"
+                            glowColor: "#f97316"
+                            displayMode: root.displayMode
+                        }
+                    }
+                }
+
+                // Reset info (2 lines)
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: root.claudeSessionReset.length > 0
+                        ? "5h: " + fullRoot.formatReset(root.claudeSessionReset)
+                        : " "
+                    font.pixelSize: 8
+                    color: Kirigami.Theme.disabledTextColor
+                }
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: root.claudeWeeklyReset.length > 0
+                        ? "Wk: " + fullRoot.formatReset(root.claudeWeeklyReset)
+                        : " "
+                    font.pixelSize: 8
+                    color: Kirigami.Theme.disabledTextColor
+                }
             }
         }
     }
