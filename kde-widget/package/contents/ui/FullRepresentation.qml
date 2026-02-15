@@ -48,6 +48,16 @@ ColumnLayout {
                 anchors.fill: parent
                 spacing: 2
 
+                // Icon
+                Image {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: 16
+                    Layout.preferredHeight: 16
+                    source: "cursor-logo.svg"
+                    sourceSize: Qt.size(16, 16)
+                    fillMode: Image.PreserveAspectFit
+                }
+
                 // Provider label
                 Text {
                     Layout.alignment: Qt.AlignHCenter
@@ -135,6 +145,16 @@ ColumnLayout {
             ColumnLayout {
                 anchors.fill: parent
                 spacing: 2
+
+                // Icon
+                Image {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: 16
+                    Layout.preferredHeight: 16
+                    source: "claude-logo.svg"
+                    sourceSize: Qt.size(16, 16)
+                    fillMode: Image.PreserveAspectFit
+                }
 
                 // Provider label
                 Text {
