@@ -343,10 +343,10 @@ function App() {
         if (sessionDelta > 0.01 || weeklyDelta > 0.01) {
           if (sessionDelta > 0.01) setPlanPulsing(true);
           if (weeklyDelta > 0.01) setOdPulsing(true);
-          if (!isFirstLoad.current) {
-            setAnimating(true);
-            setRefreshKey((k) => k + 1);
-          }
+        }
+        if (!isFirstLoad.current) {
+          setAnimating(true);
+          setRefreshKey((k) => k + 1);
         }
 
         prevClaudeSession.current = data.sessionPercentUsed;
@@ -375,10 +375,10 @@ function App() {
           setSpendDelta(`-$${totalDelta.toFixed(2)}`);
           if (planDelta > 0.001) setPlanPulsing(true);
           if (odDelta > 0.001) setOdPulsing(true);
-          if (!isFirstLoad.current) {
-            setAnimating(true);
-            setRefreshKey((k) => k + 1);
-          }
+        }
+        if (!isFirstLoad.current) {
+          setAnimating(true);
+          setRefreshKey((k) => k + 1);
         }
 
         prevPlanUsed.current = data.usedUsd;
