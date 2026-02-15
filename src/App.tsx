@@ -9,7 +9,7 @@ import claudeLogo from "./assets/claude-logo.svg";
 
 // Poll interval in seconds
 
-const POLL_INTERVAL_SECONDS = 3;
+const POLL_INTERVAL_SECONDS = 60;
 
 // Test mode: simulates a fake spend delta on every poll to test animations
 const TEST_MODE = false;
@@ -276,8 +276,14 @@ function App() {
         const weeklyDelta =
           prevWeekly !== null ? data.weeklyPercentUsed - prevWeekly : 0;
 
-        if (sessionDelta > 0.01) setPlanPulsing(true);
-        if (weeklyDelta > 0.01) setOdPulsing(true);
+        if (sessionDelta > 0.01 || weeklyDelta > 0.01) {
+          if (sessionDelta > 0.01) setPlanPulsing(true);
+          if (weeklyDelta > 0.01) setOdPulsing(true);
+          if (!isFirstLoad.current) {
+            setAnimating(true);
+            setRefreshKey((k) => k + 1);
+          }
+        }
 
         prevClaudeSession.current = data.sessionPercentUsed;
         prevClaudeWeekly.current = data.weeklyPercentUsed;
@@ -303,19 +309,18 @@ function App() {
 
         if (totalDelta > 0.001) {
           setSpendDelta(`-$${totalDelta.toFixed(2)}`);
+          if (planDelta > 0.001) setPlanPulsing(true);
+          if (odDelta > 0.001) setOdPulsing(true);
+          if (!isFirstLoad.current) {
+            setAnimating(true);
+            setRefreshKey((k) => k + 1);
+          }
         }
-
-        if (planDelta > 0.001) setPlanPulsing(true);
-        if (odDelta > 0.001) setOdPulsing(true);
 
         prevPlanUsed.current = data.usedUsd;
         prevOdUsed.current = data.onDemandUsedUsd;
       }
 
-      if (!isFirstLoad.current) {
-        setAnimating(true);
-        setRefreshKey((k) => k + 1);
-      }
       isFirstLoad.current = false;
     } catch (err) {
       console.error("usage fetch error:", err);
@@ -333,13 +338,13 @@ function App() {
     if (!animating) return;
     const timer = setTimeout(() => setAnimating(false), 1100);
     return () => clearTimeout(timer);
-  }, [animating, refreshKey]);
+  }, [animating]);
 
   useEffect(() => {
     if (!spendDelta) return;
     const timer = setTimeout(() => setSpendDelta(null), 3700);
     return () => clearTimeout(timer);
-  }, [spendDelta, refreshKey]);
+  }, [spendDelta]);
 
   useEffect(() => {
     if (!planPulsing && !odPulsing) return;
@@ -348,7 +353,7 @@ function App() {
       setOdPulsing(false);
     }, 1500);
     return () => clearTimeout(timer);
-  }, [planPulsing, odPulsing, refreshKey]);
+  }, [planPulsing, odPulsing]);
 
   useEffect(() => {
     try {
@@ -464,7 +469,7 @@ function App() {
                     style={{
                       height: `${vm.primaryBar.fill}%`,
                       background: `linear-gradient(to top, ${vm.primaryBar.color} 0%, ${vm.primaryBar.color} 30%, color-mix(in srgb, ${vm.primaryBar.color}, white 25%) 50%, ${vm.primaryBar.color} 70%, ${vm.primaryBar.color} 100%)`,
-                      backgroundSize: '100% 300%',
+                      backgroundSize: "100% 300%",
                       boxShadow: `0 0 14px ${vm.primaryBar.glow}, 0 0 6px ${vm.primaryBar.glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
                     }}
                   />
@@ -495,7 +500,7 @@ function App() {
                     style={{
                       height: `${vm.secondaryBar.fill}%`,
                       background: `linear-gradient(to top, ${vm.secondaryBar.color} 0%, ${vm.secondaryBar.color} 30%, color-mix(in srgb, ${vm.secondaryBar.color}, white 25%) 50%, ${vm.secondaryBar.color} 70%, ${vm.secondaryBar.color} 100%)`,
-                      backgroundSize: '100% 300%',
+                      backgroundSize: "100% 300%",
                       boxShadow: `0 0 14px ${vm.secondaryBar.glow}, 0 0 6px ${vm.secondaryBar.glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
                     }}
                   />
