@@ -1264,11 +1264,11 @@ pub fn run() {
             let settings = load_settings();
 
             let show_plan_item =
-                CheckMenuItemBuilder::with_id("show_plan", "Show Plan Usage")
+                CheckMenuItemBuilder::with_id("show_plan", "Show Cursor Plan Usage")
                     .checked(settings.show_plan)
                     .build(app)?;
             let show_od_item =
-                CheckMenuItemBuilder::with_id("show_on_demand", "Show On-Demand Usage")
+                CheckMenuItemBuilder::with_id("show_on_demand", "Show Cursor On-Demand Usage")
                     .checked(settings.show_on_demand)
                     .build(app)?;
             let show_claude_item =

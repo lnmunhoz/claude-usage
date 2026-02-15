@@ -268,7 +268,9 @@ function SettingsView() {
         <select
           className="settings-select"
           value={unit}
-          onChange={(e) => setUnit(e.target.value as "seconds" | "minutes" | "hours")}
+          onChange={(e) =>
+            setUnit(e.target.value as "seconds" | "minutes" | "hours")
+          }
         >
           <option value="seconds">seconds</option>
           <option value="minutes">minutes</option>
