@@ -479,6 +479,24 @@ fn write_keychain_oauth_blob(blob: &ClaudeOAuthBlob, account: &str) -> Result<()
     Ok(())
 }
 
+fn write_claude_credentials_to_file(
+    path: &std::path::Path,
+    blob: &ClaudeOAuthBlob,
+    use_keychain_format: bool,
+) -> Result<(), String> {
+    let json = if use_keychain_format {
+        let payload = ClaudeKeychainPayload {
+            claude_ai_oauth: Some(blob.clone()),
+        };
+        serde_json::to_string_pretty(&payload)
+    } else {
+        serde_json::to_string_pretty(blob)
+    };
+    let json = json.map_err(|e| format!("Failed to serialize refreshed credentials: {}", e))?;
+    fs::write(path, json)
+        .map_err(|e| format!("Failed to write refreshed credentials to {}: {}", path.display(), e))
+}
+
 async fn refresh_claude_token(
     refresh_token: &str,
     blob: &ClaudeOAuthBlob,
@@ -537,6 +555,14 @@ async fn refresh_claude_token(
         let _ = write_keychain_oauth_blob(&updated_blob, _account);
     }
 
+    // On non-macOS, write refreshed credentials back to the file
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Ok(path) = claude_credentials_path() {
+            let _ = write_claude_credentials_to_file(&path, &updated_blob, true);
+        }
+    }
+
     Ok(ClaudeCredentials {
         access_token: Some(new_access_token),
         rate_limit_tier: updated_blob.rate_limit_tier,
@@ -593,7 +619,7 @@ async fn load_claude_credentials_from_keychain() -> Result<ClaudeCredentials, St
     })
 }
 
-fn load_claude_credentials_from_file() -> Result<ClaudeCredentials, String> {
+async fn load_claude_credentials_from_file() -> Result<ClaudeCredentials, String> {
     let path = claude_credentials_path()?;
     let raw = fs::read_to_string(&path).map_err(|e| {
         format!(
@@ -603,20 +629,44 @@ fn load_claude_credentials_from_file() -> Result<ClaudeCredentials, String> {
         )
     })?;
 
-    let credentials = if let Ok(payload) = serde_json::from_str::<ClaudeKeychainPayload>(&raw) {
+    // Try to parse as keychain format with full OAuth blob (has expiry + refresh token)
+    if let Ok(payload) = serde_json::from_str::<ClaudeKeychainPayload>(&raw) {
         if let Some(oauth) = payload.claude_ai_oauth {
-            ClaudeCredentials {
-                access_token: oauth.access_token,
-                rate_limit_tier: oauth.rate_limit_tier,
+            let access_token = oauth
+                .access_token
+                .as_deref()
+                .ok_or_else(|| "Claude credentials file has no accessToken.".to_string())?;
+            validate_claude_oauth_access_token(access_token, "credentials file")?;
+
+            // Check token expiry and refresh if needed
+            if let Some(expires_at_ms) = oauth.expires_at {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0);
+                if expires_at_ms <= now_ms + 60_000 {
+                    if let Some(ref refresh_token) = oauth.refresh_token {
+                        // refresh_claude_token handles writing back to file
+                        return refresh_claude_token(refresh_token, &oauth, "file").await;
+                    } else {
+                        return Err(
+                            "Claude file token is expired and no refresh token available."
+                                .to_string(),
+                        );
+                    }
+                }
             }
-        } else {
-            serde_json::from_str::<ClaudeCredentials>(&raw)
-                .map_err(|e| format!("Failed to parse Claude credentials JSON: {}", e))?
+
+            return Ok(ClaudeCredentials {
+                access_token: Some(access_token.to_string()),
+                rate_limit_tier: oauth.rate_limit_tier,
+            });
         }
-    } else {
-        serde_json::from_str::<ClaudeCredentials>(&raw)
-            .map_err(|e| format!("Failed to parse Claude credentials JSON: {}", e))?
-    };
+    }
+
+    // Fallback: parse as flat credentials format (no expiry/refresh info available)
+    let credentials = serde_json::from_str::<ClaudeCredentials>(&raw)
+        .map_err(|e| format!("Failed to parse Claude credentials JSON: {}", e))?;
 
     if let Some(access_token) = credentials.access_token.as_deref() {
         validate_claude_oauth_access_token(access_token, "credentials file")?;
@@ -632,6 +682,7 @@ async fn load_claude_credentials() -> Result<ClaudeCredentials, String> {
     match load_claude_credentials_from_keychain().await {
         Ok(credentials) => Ok(credentials),
         Err(_) => load_claude_credentials_from_file()
+            .await
             .map_err(|file_err| format!("No usable Claude OAuth credentials available: {}", file_err)),
     }
 }
