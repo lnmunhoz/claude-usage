@@ -38,6 +38,20 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "entitlements": "./Entitlements.plist",
+      "signingIdentity": null,
+      "minimumSystemVersion": "10.15"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcxNTQ0REE3MkEzRDE3NDAKUldSQUZ6MHFwMDFVY1hlMU5ucDRmMDRucUNmSkc5eWFxTmxmSlRFOXdZdEgxdmRtOEkwVDhWK2UK",
+      "endpoints": [
+        "https://localhost:8443/latest.json"
+      ]
+    }
   }
 }

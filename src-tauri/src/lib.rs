@@ -3,10 +3,15 @@ use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, PredefinedMenuItem, SubmenuBuilder};
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::menu::{
+    AboutMetadata, CheckMenuItemBuilder, MenuBuilder, PredefinedMenuItem, SubmenuBuilder,
+};
+use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_updater::UpdaterExt;
 
 // Cookie names that Cursor uses for session auth
 const SESSION_COOKIE_NAMES: &[&str] = &[
@@ -214,7 +219,10 @@ fn save_settings(settings: &Settings) {
 fn find_cursor_cookie_header() -> Result<String, String> {
     // Try loading cookies from all browsers at once
     let domains: Vec<String> = CURSOR_DOMAINS.iter().map(|d| d.to_string()).collect();
-    println!("[token-juice] Searching for cookies in domains: {:?}", domains);
+    println!(
+        "[token-juice] Searching for cookies in domains: {:?}",
+        domains
+    );
 
     let cookies = rookie::load(Some(domains)).map_err(|e| {
         let msg = format!("Failed to read browser cookies: {}", e);
@@ -236,10 +244,7 @@ fn find_cursor_cookie_header() -> Result<String, String> {
     // Find a session cookie
     for cookie in &cookies {
         if SESSION_COOKIE_NAMES.contains(&cookie.name.as_str()) {
-            println!(
-                "[token-juice] Found session cookie: {}",
-                cookie.name
-            );
+            println!("[token-juice] Found session cookie: {}", cookie.name);
             // Build a cookie header with all cookies from cursor domains
             let cookie_header: String = cookies
                 .iter()
@@ -412,7 +417,9 @@ fn claude_credentials_path() -> Result<PathBuf, String> {
         .ok_or_else(|| "Could not resolve home directory for Claude credentials.".to_string())?;
     let candidates = [
         home.join(".claude").join(".credentials.json"),
-        home.join(".config").join("claude").join(".credentials.json"),
+        home.join(".config")
+            .join("claude")
+            .join(".credentials.json"),
     ];
     for candidate in candidates {
         if candidate.exists() {
@@ -466,7 +473,9 @@ fn run_security_lookup(account: Option<&str>) -> Result<String, String> {
 
 #[cfg(target_os = "macos")]
 fn read_keychain_oauth_blob() -> Result<(ClaudeOAuthBlob, String), String> {
-    println!("[token-juice] Claude auth: checking macOS Keychain service 'Claude Code-credentials'...");
+    println!(
+        "[token-juice] Claude auth: checking macOS Keychain service 'Claude Code-credentials'..."
+    );
     let account = std::env::var("USER").ok();
     let raw = if let Some(ref acct) = account {
         println!(
@@ -570,10 +579,7 @@ async fn refresh_claude_token(
     );
 
     if !status.is_success() {
-        return Err(format!(
-            "Claude token refresh returned HTTP {}.",
-            status
-        ));
+        return Err(format!("Claude token refresh returned HTTP {}.", status));
     }
 
     let body = response
@@ -648,11 +654,11 @@ async fn load_claude_credentials_from_keychain() -> Result<ClaudeCredentials, St
     if let Some(ref scopes) = oauth.scopes {
         let has_profile_scope = scopes.iter().any(|s| s == "user:profile");
         if !has_profile_scope {
-            return Err("Claude OAuth token from keychain is missing user:profile scope.".to_string());
+            return Err(
+                "Claude OAuth token from keychain is missing user:profile scope.".to_string(),
+            );
         }
-        println!(
-            "[token-juice] Claude auth: keychain token has user:profile scope."
-        );
+        println!("[token-juice] Claude auth: keychain token has user:profile scope.");
     }
 
     // Check expiry — if expired, attempt refresh
@@ -669,7 +675,9 @@ async fn load_claude_credentials_from_keychain() -> Result<ClaudeCredentials, St
             if let Some(ref refresh_token) = oauth.refresh_token {
                 return refresh_claude_token(refresh_token, &oauth, &account).await;
             } else {
-                return Err("Claude keychain token is expired and no refresh token available.".to_string());
+                return Err(
+                    "Claude keychain token is expired and no refresh token available.".to_string(),
+                );
             }
         }
     }
@@ -714,7 +722,9 @@ fn load_claude_credentials_from_file() -> Result<ClaudeCredentials, String> {
 }
 
 async fn load_claude_credentials() -> Result<ClaudeCredentials, String> {
-    println!("[token-juice] Claude auth: starting credential source resolution (keychain -> file).");
+    println!(
+        "[token-juice] Claude auth: starting credential source resolution (keychain -> file)."
+    );
     match load_claude_credentials_from_keychain().await {
         Ok(credentials) => {
             println!("[token-juice] Claude auth: using keychain credentials.");
@@ -784,7 +794,10 @@ async fn fetch_claude_usage_oauth() -> Result<ClaudeUsageData, String> {
         .map_err(|e| format!("Claude OAuth request failed: {}", e))?;
 
     let status = response.status();
-    println!("[token-juice] Claude OAuth usage endpoint status: {}", status);
+    println!(
+        "[token-juice] Claude OAuth usage endpoint status: {}",
+        status
+    );
     if !status.is_success() {
         return Err(format!("Claude OAuth API returned HTTP {}", status));
     }
@@ -829,30 +842,26 @@ async fn fetch_claude_usage_oauth() -> Result<ClaudeUsageData, String> {
         .and_then(usage_window_reset)
         .or_else(|| extract_window_reset(&value, &["seven_day", "current_week"]));
 
-    let (extra_usage_spend, extra_usage_limit) = if let Some(extra) = typed
-        .as_ref()
-        .and_then(|t| t.extra_usage.as_ref())
-    {
-        let is_enabled = extra.is_enabled.unwrap_or(false);
-        if is_enabled {
-            (
-                extra
-                    .used_credits
-                    .or(extra.spend)
-                    .or(extra.used)
-                    .or(extra.monthly_spend),
-                extra
-                    .monthly_limit
-                    .or(extra.limit),
-            )
+    let (extra_usage_spend, extra_usage_limit) =
+        if let Some(extra) = typed.as_ref().and_then(|t| t.extra_usage.as_ref()) {
+            let is_enabled = extra.is_enabled.unwrap_or(false);
+            if is_enabled {
+                (
+                    extra
+                        .used_credits
+                        .or(extra.spend)
+                        .or(extra.used)
+                        .or(extra.monthly_spend),
+                    extra.monthly_limit.or(extra.limit),
+                )
+            } else {
+                (None, None)
+            }
         } else {
-            (None, None)
-        }
-    } else {
-        let spend = value_to_f64(&value, &["extra_usage_spend", "spend", "monthly_spend"]);
-        let limit = value_to_f64(&value, &["extra_usage_limit", "limit", "monthly_limit"]);
-        (spend, limit)
-    };
+            let spend = value_to_f64(&value, &["extra_usage_spend", "spend", "monthly_spend"]);
+            let limit = value_to_f64(&value, &["extra_usage_limit", "limit", "monthly_limit"]);
+            (spend, limit)
+        };
 
     println!(
         "[token-juice] Claude usage parsed: session={:.1}%, weekly={:.1}%, session_reset={:?}, weekly_reset={:?}, extra_spend={:?}, extra_limit={:?}",
@@ -1120,7 +1129,10 @@ async fn fetch_cursor_usage() -> Result<UsageData, String> {
         eprintln!("[token-juice] {}", msg);
         msg
     })?;
-    println!("[token-juice] Raw API response: {}", &body[..body.len().min(500)]);
+    println!(
+        "[token-juice] Raw API response: {}",
+        &body[..body.len().min(500)]
+    );
 
     let summary: CursorUsageSummary = serde_json::from_str(&body).map_err(|e| {
         let msg = format!("Failed to parse Cursor API response: {}", e);
@@ -1151,7 +1163,9 @@ async fn fetch_cursor_usage() -> Result<UsageData, String> {
 
     println!(
         "[token-juice] Plan percent: {:.2}% (${:.2} / ${:.2})",
-        percent_used, used_cents / 100.0, limit_cents / 100.0
+        percent_used,
+        used_cents / 100.0,
+        limit_cents / 100.0
     );
 
     let od_used_cents = on_demand.and_then(|o| o.used).unwrap_or(0) as f64;
@@ -1237,10 +1251,7 @@ fn save_poll_interval(
     settings.poll_interval_seconds = total_seconds;
     save_settings(&settings);
     let _ = app_handle.emit("settings-changed", settings.clone());
-    println!(
-        "[token-juice] Poll interval changed to {}s",
-        total_seconds
-    );
+    println!("[token-juice] Poll interval changed to {}s", total_seconds);
     drop(settings);
 
     if let Some(window) = app_handle.get_webview_window("settings") {
@@ -1250,9 +1261,164 @@ fn save_poll_interval(
     Ok(())
 }
 
+static UPDATE_CHECK_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+async fn check_for_update(app: AppHandle, manual: bool) {
+    if UPDATE_CHECK_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    check_for_update_inner(&app, manual).await;
+    UPDATE_CHECK_IN_PROGRESS.store(false, Ordering::SeqCst);
+}
+
+async fn check_for_update_inner(app: &AppHandle, manual: bool) {
+    let updater = match app.updater() {
+        Ok(u) => u,
+        Err(e) => {
+            println!("[token-juice] Updater unavailable: {}", e);
+            return;
+        }
+    };
+
+    let update = match updater.check().await {
+        Ok(Some(u)) => u,
+        Ok(None) => {
+            println!("[token-juice] No update available.");
+            if manual {
+                app.dialog()
+                    .message("You're on the latest version.")
+                    .title("No Updates")
+                    .kind(MessageDialogKind::Info)
+                    .buttons(MessageDialogButtons::Ok)
+                    .show(|_| {});
+            }
+            return;
+        }
+        Err(e) => {
+            println!("[token-juice] Update check failed: {}", e);
+            if manual {
+                app.dialog()
+                    .message("Failed to check for updates. Please try again later.")
+                    .title("Update Error")
+                    .kind(MessageDialogKind::Error)
+                    .buttons(MessageDialogButtons::Ok)
+                    .show(|_| {});
+            }
+            return;
+        }
+    };
+
+    println!(
+        "[token-juice] Update available: v{} (notes: {:?})",
+        update.version,
+        update.body
+    );
+
+    let version = update.version.clone();
+    let body = update.body.clone().unwrap_or_default();
+
+    // Close any existing update window
+    if let Some(win) = app.get_webview_window("update") {
+        let _ = win.close();
+    }
+
+    // Create the update dialog window
+    let update_window = match WebviewWindowBuilder::new(
+        app,
+        "update",
+        WebviewUrl::App("index.html".into()),
+    )
+    .title("Token Juice Update")
+    .inner_size(340.0, 400.0)
+    .resizable(false)
+    .center()
+    .background_color(tauri::window::Color(28, 28, 30, 255))
+    .build()
+    {
+        Ok(w) => w,
+        Err(e) => {
+            println!("[token-juice] Failed to create update window: {}", e);
+            return;
+        }
+    };
+
+    // When the frontend mounts, it emits "update-ready"; reply with the info.
+    let ready_handle = app.clone();
+    let ready_id = update_window.listen("update-ready", move |_: tauri::Event| {
+        if let Some(win) = ready_handle.get_webview_window("update") {
+            let payload = serde_json::json!({
+                "version": version,
+                "body": body,
+            });
+            let _ = win.emit("update-info", payload);
+        }
+    });
+
+    // Listen for the user's response
+    let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+    let tx = std::sync::Mutex::new(Some(tx));
+    let response_id = update_window.listen("update-response", move |event: tauri::Event| {
+        if let Some(tx) = tx.lock().unwrap().take() {
+            let accepted = serde_json::from_str::<serde_json::Value>(event.payload())
+                .ok()
+                .and_then(|v| v.get("accepted").and_then(|a| a.as_bool()))
+                .unwrap_or(false);
+            let _ = tx.send(accepted);
+        }
+    });
+
+    // Also handle window close as "Not Now"
+    let (close_tx, close_rx) = tokio::sync::oneshot::channel::<()>();
+    let close_tx = std::sync::Mutex::new(Some(close_tx));
+    let close_id = update_window.on_window_event(move |event| {
+        if let tauri::WindowEvent::Destroyed = event {
+            if let Some(tx) = close_tx.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+        }
+    });
+
+    // Wait for either a response event or window close
+    let accepted = tokio::select! {
+        result = rx => result.unwrap_or(false),
+        _ = close_rx => false,
+    };
+
+    // Clean up listeners
+    update_window.unlisten(response_id);
+    update_window.unlisten(ready_id);
+    let _ = close_id;
+
+    // Close the update window
+    if let Some(win) = app.get_webview_window("update") {
+        let _ = win.close();
+    }
+
+    if accepted {
+        println!("[token-juice] User accepted update, downloading...");
+        if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
+            println!("[token-juice] Update install failed: {}", e);
+            app.dialog()
+                .message(format!("Failed to install update: {}", e))
+                .title("Update Error")
+                .kind(MessageDialogKind::Error)
+                .buttons(MessageDialogButtons::Ok)
+                .show(|_| {});
+            return;
+        }
+        app.restart();
+    } else {
+        println!("[token-juice] User declined update.");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(Mutex::new(load_settings()))
@@ -1289,7 +1455,17 @@ pub fn run() {
                     .checked(is_autostart)
                     .build(app)?;
 
-            let about_item = PredefinedMenuItem::about(app, Some("About Token Juice"), None)?;
+            let about_metadata = AboutMetadata {
+                version: Some(app.package_info().version.to_string()),
+                authors: Some(vec!["Token Juice".to_string()]),
+                website: Some("https://github.com/lnmunhoz/cursor-juice".to_string()),
+                ..Default::default()
+            };
+            let about_item = PredefinedMenuItem::about(
+                app,
+                Some("About Token Juice"),
+                Some(about_metadata),
+            )?;
             let quit_item = PredefinedMenuItem::quit(app, Some("Quit Token Juice"))?;
 
             let app_menu = SubmenuBuilder::new(app, "Token Juice")
@@ -1302,6 +1478,8 @@ pub fn run() {
                 .item(&remaining_mode_item)
                 .separator()
                 .text("configure_interval", "Configure Refresh Interval...")
+                .separator()
+                .text("check_for_updates", "Check for Updates...")
                 .separator()
                 .item(&launch_at_login_item)
                 .separator()
@@ -1355,6 +1533,12 @@ pub fn run() {
                     "configure_interval" => {
                         let _ = create_settings_window(app_handle);
                     }
+                    "check_for_updates" => {
+                        let handle = app_handle.clone();
+                        tauri::async_runtime::spawn(async move {
+                            check_for_update(handle, true).await;
+                        });
+                    }
                     "launch_at_login" => {
                         let manager = app_handle.autolaunch();
                         let checked = launch_at_login_item.is_checked().unwrap_or(false);
@@ -1366,6 +1550,12 @@ pub fn run() {
                     }
                     _ => {}
                 }
+            });
+
+            // Auto-check for updates on startup (silent — no "up to date" dialog)
+            let startup_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                check_for_update(startup_handle, false).await;
             });
 
             Ok(())
