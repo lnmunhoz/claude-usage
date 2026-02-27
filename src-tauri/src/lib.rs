@@ -1,79 +1,41 @@
+use base64::Engine;
+use rand::Rng;
+use security_framework::passwords::{
+    delete_generic_password, get_generic_password, set_generic_password,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::{BufRead, BufReader, Write as IoWrite};
+use std::net::TcpListener;
 use std::path::PathBuf;
-use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Mutex;
-use tauri::menu::{
-    AboutMetadata, CheckMenuItemBuilder, MenuBuilder, PredefinedMenuItem, SubmenuBuilder,
-};
+use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_positioner::{Position, WindowExt as PositionerExt};
 use tauri_plugin_updater::UpdaterExt;
+use url::Url;
 
-// Cookie names that Cursor uses for session auth
-const SESSION_COOKIE_NAMES: &[&str] = &[
-    "WorkosCursorSessionToken",
-    "__Secure-next-auth.session-token",
-    "next-auth.session-token",
-];
+const KEYCHAIN_SERVICE: &str = "com.tokenjuice.app";
+const KEYCHAIN_ACCOUNT: &str = "claude-oauth";
 
-const CURSOR_DOMAINS: &[&str] = &["cursor.com", "cursor.sh"];
-const CLAUDE_DOMAIN: &str = "claude.ai";
+// Debounce: prevent re-showing panel right after focus-loss hide
+static PANEL_HIDDEN_AT_MS: AtomicI64 = AtomicI64::new(0);
 
-// --- API Response Models (matching CodexBar's CursorUsageSummary) ---
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-struct CursorUsageSummary {
-    billing_cycle_start: Option<String>,
-    billing_cycle_end: Option<String>,
-    membership_type: Option<String>,
-    individual_usage: Option<CursorIndividualUsage>,
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CursorIndividualUsage {
-    plan: Option<CursorPlanUsage>,
-    on_demand: Option<CursorOnDemandUsage>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-struct CursorPlanUsage {
-    used: Option<i64>,
-    limit: Option<i64>,
-    remaining: Option<i64>,
-    total_percent_used: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CursorOnDemandUsage {
-    used: Option<i64>,
-    limit: Option<i64>,
-}
-
-// --- Response sent to the frontend ---
-
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct UsageData {
-    pub percent_used: f64,
-    pub used_usd: f64,
-    pub limit_usd: f64,
-    pub remaining_usd: f64,
-    pub on_demand_percent_used: f64,
-    pub on_demand_used_usd: f64,
-    pub on_demand_limit_usd: Option<f64>,
-    pub billing_cycle_end: Option<String>,
-    pub membership_type: Option<String>,
-}
+// --- Claude Usage Response ---
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -92,11 +54,8 @@ pub struct ClaudeUsageData {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
-    pub show_plan: bool,
-    pub show_on_demand: bool,
-    pub show_claude_window: bool,
     #[serde(default = "default_display_mode")]
-    pub display_mode: String, // "usage" or "remaining"
+    pub display_mode: String,
     #[serde(default = "default_poll_interval")]
     pub poll_interval_seconds: u64,
 }
@@ -105,7 +64,6 @@ fn default_display_mode() -> String {
     "remaining".to_string()
 }
 
-#[allow(dead_code)]
 fn default_poll_interval() -> u64 {
     60
 }
@@ -113,29 +71,20 @@ fn default_poll_interval() -> u64 {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            show_plan: true,
-            show_on_demand: true,
-            show_claude_window: false,
             display_mode: default_display_mode(),
             poll_interval_seconds: default_poll_interval(),
         }
     }
 }
 
+// --- Credentials ---
+
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct ClaudeCredentials {
     #[serde(rename = "accessToken", alias = "access_token")]
     access_token: Option<String>,
     #[serde(rename = "rateLimitTier", alias = "rate_limit_tier")]
     rate_limit_tier: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ClaudeKeychainPayload {
-    #[serde(rename = "claudeAiOauth")]
-    claude_ai_oauth: Option<ClaudeOAuthBlob>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -154,11 +103,11 @@ struct ClaudeOAuthBlob {
     rate_limit_tier: Option<String>,
 }
 
+// --- Usage API models ---
+
 #[derive(Debug, Deserialize)]
 struct ClaudeUsageWindow {
-    /// Primary field from the real API response
     utilization: Option<f64>,
-    /// Fallback fields for alternative response shapes
     percent_used: Option<f64>,
     percent_left: Option<f64>,
     used: Option<f64>,
@@ -175,7 +124,6 @@ struct ClaudeExtraUsage {
     used_credits: Option<f64>,
     monthly_limit: Option<f64>,
     utilization: Option<f64>,
-    /// Fallback fields
     spend: Option<f64>,
     limit: Option<f64>,
     used: Option<f64>,
@@ -188,6 +136,23 @@ struct ClaudeOAuthUsageResponse {
     seven_day: Option<ClaudeUsageWindow>,
     extra_usage: Option<ClaudeExtraUsage>,
 }
+
+#[derive(Debug, Deserialize)]
+struct OAuthTokenResponse {
+    access_token: Option<String>,
+    refresh_token: Option<String>,
+    expires_in: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveTokenInput {
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_at: Option<i64>,
+}
+
+// --- Settings path ---
 
 fn settings_path() -> PathBuf {
     let config_dir = dirs::config_dir()
@@ -214,60 +179,57 @@ fn save_settings(settings: &Settings) {
     }
 }
 
-// --- Cookie Import ---
+// --- Keychain (security-framework) ---
 
-fn find_cursor_cookie_header() -> Result<String, String> {
-    // Try loading cookies from all browsers at once
-    let domains: Vec<String> = CURSOR_DOMAINS.iter().map(|d| d.to_string()).collect();
-    println!(
-        "[token-juice] Searching for cookies in domains: {:?}",
-        domains
-    );
-
-    let cookies = rookie::load(Some(domains)).map_err(|e| {
-        let msg = format!("Failed to read browser cookies: {}", e);
-        eprintln!("[token-juice] {}", msg);
-        msg
-    })?;
-
-    println!(
-        "[token-juice] Found {} cookies from cursor domains",
-        cookies.len()
-    );
-    for cookie in &cookies {
-        println!(
-            "[token-juice]   cookie: name={}, domain={}",
-            cookie.name, cookie.domain
-        );
-    }
-
-    // Find a session cookie
-    for cookie in &cookies {
-        if SESSION_COOKIE_NAMES.contains(&cookie.name.as_str()) {
-            println!("[token-juice] Found session cookie: {}", cookie.name);
-            // Build a cookie header with all cookies from cursor domains
-            let cookie_header: String = cookies
-                .iter()
-                .map(|c| format!("{}={}", c.name, c.value))
-                .collect::<Vec<_>>()
-                .join("; ");
-            return Ok(cookie_header);
-        }
-    }
-
-    let msg =
-        "No Cursor session cookie found. Make sure you are logged into cursor.com in your browser."
-            .to_string();
-    eprintln!("[token-juice] {}", msg);
-    Err(msg)
+fn read_keychain_oauth_blob() -> Result<ClaudeOAuthBlob, String> {
+    let data = get_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+        .map_err(|e| format!("Keychain lookup failed: {}", e))?;
+    let json = String::from_utf8(data.to_vec())
+        .map_err(|_| "Keychain data was not valid UTF-8.".to_string())?;
+    serde_json::from_str(&json).map_err(|e| format!("Failed to parse keychain JSON: {}", e))
 }
+
+fn write_keychain_oauth_blob(blob: &ClaudeOAuthBlob) -> Result<(), String> {
+    let json = serde_json::to_string(blob)
+        .map_err(|e| format!("Failed to serialize: {}", e))?;
+    set_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, json.as_bytes())
+        .map_err(|e| format!("Failed to write keychain: {}", e))
+}
+
+// --- Token validation ---
+
+fn validate_claude_oauth_access_token(access_token: &str, source: &str) -> Result<(), String> {
+    if access_token.starts_with("sk-ant-oat") {
+        return Ok(());
+    }
+    Err(format!(
+        "Claude OAuth token from {} is not an OAuth access token.",
+        source
+    ))
+}
+
+fn plan_type_from_rate_tier(rate_limit_tier: Option<&str>) -> Option<String> {
+    let tier = rate_limit_tier?.to_lowercase();
+    if tier.contains("enterprise") {
+        Some("enterprise".to_string())
+    } else if tier.contains("team") {
+        Some("team".to_string())
+    } else if tier.contains("max") {
+        Some("max".to_string())
+    } else if tier.contains("pro") {
+        Some("pro".to_string())
+    } else {
+        Some(tier)
+    }
+}
+
+// --- Usage parsing helpers ---
 
 fn clamp_percent(value: f64) -> f64 {
     value.clamp(0.0, 100.0)
 }
 
 fn usage_window_percent(window: &ClaudeUsageWindow) -> Option<f64> {
-    // Real API returns "utilization" as 0-100 percentage
     if let Some(v) = window.utilization {
         return Some(clamp_percent(v));
     }
@@ -311,7 +273,6 @@ fn extract_percent_from_window_value(window: &Value) -> Option<f64> {
     if let Some(n) = window.as_f64() {
         return Some(clamp_percent(n));
     }
-    // Real API uses "utilization" as the percentage field
     if let Some(n) = value_to_f64(window, &["utilization"]) {
         return Some(clamp_percent(n));
     }
@@ -361,207 +322,17 @@ fn extract_window_reset(root: &Value, keys: &[&str]) -> Option<String> {
     None
 }
 
-fn extract_org_id(orgs_payload: &Value) -> Option<String> {
-    let pick_from_object = |obj: &Value| -> Option<String> {
-        for key in ["uuid", "id", "organization_uuid", "organizationId"] {
-            if let Some(v) = obj.get(key).and_then(|v| v.as_str()) {
-                if !v.is_empty() {
-                    return Some(v.to_string());
-                }
-            }
-        }
-        None
-    };
-
-    if let Some(arr) = orgs_payload.as_array() {
-        return arr.first().and_then(pick_from_object);
-    }
-
-    if let Some(arr) = orgs_payload.get("organizations").and_then(|v| v.as_array()) {
-        return arr.first().and_then(pick_from_object);
-    }
-
-    pick_from_object(orgs_payload)
-}
-
-fn plan_type_from_rate_tier(rate_limit_tier: Option<&str>) -> Option<String> {
-    let tier = rate_limit_tier?.to_lowercase();
-    if tier.contains("enterprise") {
-        Some("enterprise".to_string())
-    } else if tier.contains("team") {
-        Some("team".to_string())
-    } else if tier.contains("max") {
-        Some("max".to_string())
-    } else if tier.contains("pro") {
-        Some("pro".to_string())
-    } else {
-        Some(tier)
-    }
-}
-
-fn claude_credentials_path() -> Result<PathBuf, String> {
-    if let Ok(config_roots) = std::env::var("CLAUDE_CONFIG_DIR") {
-        for root in config_roots.split(',') {
-            let trimmed = root.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let candidate = PathBuf::from(trimmed).join(".credentials.json");
-            if candidate.exists() {
-                return Ok(candidate);
-            }
-        }
-    }
-
-    let home = dirs::home_dir()
-        .ok_or_else(|| "Could not resolve home directory for Claude credentials.".to_string())?;
-    let candidates = [
-        home.join(".claude").join(".credentials.json"),
-        home.join(".config")
-            .join("claude")
-            .join(".credentials.json"),
-    ];
-    for candidate in candidates {
-        if candidate.exists() {
-            return Ok(candidate);
-        }
-    }
-
-    Err(
-        "Claude OAuth credentials file not found. Tried CLAUDE_CONFIG_DIR roots, ~/.claude/.credentials.json, and ~/.config/claude/.credentials.json."
-            .to_string(),
-    )
-}
-
-fn validate_claude_oauth_access_token(access_token: &str, source: &str) -> Result<(), String> {
-    if access_token.starts_with("sk-ant-oat") {
-        return Ok(());
-    }
-    Err(format!(
-        "Claude OAuth token from {} is not an OAuth access token.",
-        source
-    ))
-}
-
-// Token metadata validation is now done inline in load_claude_credentials_from_keychain.
-
-fn run_security_lookup(account: Option<&str>) -> Result<String, String> {
-    let mut cmd = Command::new("/usr/bin/security");
-    cmd.arg("find-generic-password")
-        .arg("-s")
-        .arg("Claude Code-credentials")
-        .arg("-w");
-    if let Some(acct) = account {
-        cmd.arg("-a").arg(acct);
-    }
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Claude keychain lookup failed: {}", e))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let reason = stderr
-            .lines()
-            .next()
-            .unwrap_or("security command returned non-zero status");
-        return Err(format!("Claude keychain lookup failed: {}", reason));
-    }
-
-    String::from_utf8(output.stdout)
-        .map_err(|_| "Claude keychain credentials were not valid UTF-8.".to_string())
-}
-
-#[cfg(target_os = "macos")]
-fn read_keychain_oauth_blob() -> Result<(ClaudeOAuthBlob, String), String> {
-    println!(
-        "[token-juice] Claude auth: checking macOS Keychain service 'Claude Code-credentials'..."
-    );
-    let account = std::env::var("USER").ok();
-    let raw = if let Some(ref acct) = account {
-        println!(
-            "[token-juice] Claude auth: trying keychain lookup scoped to account '{}'.",
-            acct
-        );
-        match run_security_lookup(Some(acct)) {
-            Ok(raw) => raw,
-            Err(account_err) => {
-                println!(
-                    "[token-juice] Claude auth: account-scoped lookup failed ({}). Trying unscoped lookup...",
-                    account_err
-                );
-                run_security_lookup(None)?
-            }
-        }
-    } else {
-        println!(
-            "[token-juice] Claude auth: USER env var unavailable. Trying unscoped keychain lookup..."
-        );
-        run_security_lookup(None)?
-    };
-
-    let payload: ClaudeKeychainPayload = serde_json::from_str(raw.trim())
-        .map_err(|e| format!("Failed to parse Claude keychain credentials JSON: {}", e))?;
-
-    let oauth = payload
-        .claude_ai_oauth
-        .ok_or_else(|| "Claude keychain entry missing claudeAiOauth object.".to_string())?;
-
-    let acct = account.unwrap_or_default();
-    Ok((oauth, acct))
-}
-
-#[cfg(target_os = "macos")]
-fn write_keychain_oauth_blob(blob: &ClaudeOAuthBlob, account: &str) -> Result<(), String> {
-    let payload = ClaudeKeychainPayload {
-        claude_ai_oauth: Some(blob.clone()),
-    };
-    let json = serde_json::to_string(&payload)
-        .map_err(|e| format!("Failed to serialize keychain payload: {}", e))?;
-
-    let acct_arg = if account.is_empty() {
-        std::env::var("USER").unwrap_or_default()
-    } else {
-        account.to_string()
-    };
-
-    let output = Command::new("/usr/bin/security")
-        .arg("add-generic-password")
-        .arg("-U") // update if exists
-        .arg("-s")
-        .arg("Claude Code-credentials")
-        .arg("-a")
-        .arg(&acct_arg)
-        .arg("-w")
-        .arg(&json)
-        .output()
-        .map_err(|e| format!("Failed to update keychain: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Failed to update keychain: {}", stderr.trim()));
-    }
-
-    println!("[token-juice] Claude auth: keychain entry updated with refreshed token.");
-    Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-struct OAuthTokenResponse {
-    access_token: Option<String>,
-    refresh_token: Option<String>,
-    expires_in: Option<i64>,
-}
+// --- Token refresh ---
 
 async fn refresh_claude_token(
     refresh_token: &str,
     blob: &ClaudeOAuthBlob,
-    account: &str,
 ) -> Result<ClaudeCredentials, String> {
     println!("[token-juice] Claude auth: attempting OAuth token refresh...");
 
     let client = reqwest::Client::new();
     let response = client
-        .post("https://console.anthropic.com/v1/oauth/token")
+        .post("https://platform.claude.com/v1/oauth/token")
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(format!(
             "grant_type=refresh_token&refresh_token={}",
@@ -573,11 +344,6 @@ async fn refresh_claude_token(
         .map_err(|e| format!("Claude token refresh request failed: {}", e))?;
 
     let status = response.status();
-    println!(
-        "[token-juice] Claude auth: token refresh endpoint returned HTTP {}.",
-        status
-    );
-
     if !status.is_success() {
         return Err(format!("Claude token refresh returned HTTP {}.", status));
     }
@@ -594,33 +360,26 @@ async fn refresh_claude_token(
         .ok_or_else(|| "Token refresh response missing access_token.".to_string())?;
     validate_claude_oauth_access_token(&new_access_token, "refreshed token")?;
 
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
+    let now = now_ms();
     let new_expires_at = token_resp
         .expires_in
-        .map(|secs| now_ms + secs * 1000)
+        .map(|secs| now + secs * 1000)
         .or(blob.expires_at);
 
     let new_refresh = token_resp
         .refresh_token
         .unwrap_or_else(|| refresh_token.to_string());
 
-    // Update the keychain with refreshed credentials
     let mut updated_blob = blob.clone();
     updated_blob.access_token = Some(new_access_token.clone());
     updated_blob.refresh_token = Some(new_refresh);
     updated_blob.expires_at = new_expires_at;
 
-    #[cfg(target_os = "macos")]
-    {
-        if let Err(e) = write_keychain_oauth_blob(&updated_blob, account) {
-            println!(
-                "[token-juice] Claude auth: warning - could not update keychain ({}). Token will work for this session only.",
-                e
-            );
-        }
+    if let Err(e) = write_keychain_oauth_blob(&updated_blob) {
+        println!(
+            "[token-juice] Claude auth: warning - could not update keychain ({}). Token will work for this session only.",
+            e
+        );
     }
 
     println!("[token-juice] Claude auth: token refresh succeeded.");
@@ -630,61 +389,31 @@ async fn refresh_claude_token(
     })
 }
 
-#[cfg(target_os = "macos")]
-fn load_claude_credentials_from_keychain_sync() -> Result<(ClaudeOAuthBlob, String), String> {
-    read_keychain_oauth_blob()
-}
+// --- Load credentials from keychain ---
 
-#[cfg(not(target_os = "macos"))]
-fn load_claude_credentials_from_keychain_sync() -> Result<(ClaudeOAuthBlob, String), String> {
-    Err("Claude keychain OAuth is only supported on macOS.".to_string())
-}
-
-/// Reads keychain, validates token, refreshes if expired (async).
-async fn load_claude_credentials_from_keychain() -> Result<ClaudeCredentials, String> {
-    let (oauth, account) = load_claude_credentials_from_keychain_sync()?;
+async fn load_claude_credentials() -> Result<ClaudeCredentials, String> {
+    let oauth = read_keychain_oauth_blob()?;
 
     let access_token = oauth
         .access_token
         .as_deref()
-        .ok_or_else(|| "Claude keychain entry missing access token.".to_string())?;
+        .ok_or_else(|| "Keychain entry missing access token.".to_string())?;
     validate_claude_oauth_access_token(access_token, "keychain")?;
-
-    // Check scope
-    if let Some(ref scopes) = oauth.scopes {
-        let has_profile_scope = scopes.iter().any(|s| s == "user:profile");
-        if !has_profile_scope {
-            return Err(
-                "Claude OAuth token from keychain is missing user:profile scope.".to_string(),
-            );
-        }
-        println!("[token-juice] Claude auth: keychain token has user:profile scope.");
-    }
 
     // Check expiry — if expired, attempt refresh
     if let Some(expires_at_ms) = oauth.expires_at {
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
-        if expires_at_ms <= now_ms + 60_000 {
-            println!(
-                "[token-juice] Claude auth: keychain access token is expired (expired {}ms ago). Checking for refresh token...",
-                now_ms - expires_at_ms
-            );
+        let now = now_ms();
+        if expires_at_ms <= now + 60_000 {
+            println!("[token-juice] Claude auth: token expired, attempting refresh...");
             if let Some(ref refresh_token) = oauth.refresh_token {
-                return refresh_claude_token(refresh_token, &oauth, &account).await;
+                return refresh_claude_token(refresh_token, &oauth).await;
             } else {
                 return Err(
-                    "Claude keychain token is expired and no refresh token available.".to_string(),
+                    "Claude token is expired and no refresh token available.".to_string(),
                 );
             }
         }
     }
-
-    println!(
-        "[token-juice] Claude auth: keychain credentials are usable (scope + expiry checks passed)."
-    );
 
     Ok(ClaudeCredentials {
         access_token: Some(access_token.to_string()),
@@ -692,95 +421,14 @@ async fn load_claude_credentials_from_keychain() -> Result<ClaudeCredentials, St
     })
 }
 
-#[cfg(not(target_os = "macos"))]
-fn read_keychain_oauth_blob() -> Result<(ClaudeOAuthBlob, String), String> {
-    Err("Claude keychain OAuth is only supported on macOS.".to_string())
-}
+// --- Fetch usage ---
 
-fn load_claude_credentials_from_file() -> Result<ClaudeCredentials, String> {
-    println!("[token-juice] Claude auth: checking file-based OAuth credentials...");
-    let path = claude_credentials_path()?;
-    println!(
-        "[token-juice] Claude auth: using credentials file at {}",
-        path.display()
-    );
-    let raw = fs::read_to_string(&path).map_err(|e| {
-        format!(
-            "Failed to read Claude credentials at {}: {}",
-            path.display(),
-            e
-        )
-    })?;
-
-    let credentials = serde_json::from_str::<ClaudeCredentials>(&raw)
-        .map_err(|e| format!("Failed to parse Claude credentials JSON: {}", e))?;
-    if let Some(access_token) = credentials.access_token.as_deref() {
-        validate_claude_oauth_access_token(access_token, "credentials file")?;
-    }
-    println!("[token-juice] Claude auth: credentials file parsed successfully.");
-    Ok(credentials)
-}
-
-async fn load_claude_credentials() -> Result<ClaudeCredentials, String> {
-    println!(
-        "[token-juice] Claude auth: starting credential source resolution (keychain -> file)."
-    );
-    match load_claude_credentials_from_keychain().await {
-        Ok(credentials) => {
-            println!("[token-juice] Claude auth: using keychain credentials.");
-            return Ok(credentials);
-        }
-        Err(keychain_err) => {
-            println!(
-                "[token-juice] Claude auth: keychain unavailable/unusable ({}). Trying credentials file...",
-                keychain_err
-            );
-            match load_claude_credentials_from_file() {
-                Ok(credentials) => {
-                    println!("[token-juice] Claude auth: using file credentials.");
-                    return Ok(credentials);
-                }
-                Err(file_err) => {
-                    return Err(format!(
-                        "No usable Claude OAuth credentials available. keychain={} file={}",
-                        keychain_err, file_err
-                    ))
-                }
-            }
-        }
-    }
-}
-
-fn find_claude_session_cookies() -> Result<Vec<String>, String> {
-    let cookies = rookie::load(Some(vec![CLAUDE_DOMAIN.to_string()]))
-        .map_err(|e| format!("Failed to read browser cookies for claude.ai: {}", e))?;
-
-    let mut session_keys = Vec::new();
-    for cookie in cookies {
-        if cookie.name == "sessionKey" && !cookie.value.is_empty() {
-            session_keys.push(cookie.value);
-        }
-    }
-
-    if session_keys.is_empty() {
-        return Err(
-            "No claude.ai sessionKey cookie found. Log into claude.ai in your browser.".to_string(),
-        );
-    }
-
-    Ok(session_keys)
-}
-
-async fn fetch_claude_usage_oauth() -> Result<ClaudeUsageData, String> {
-    println!("[token-juice] Claude auth: OAuth path selected.");
+async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, String> {
     let credentials = load_claude_credentials().await?;
     let access_token = credentials
         .access_token
         .as_deref()
         .ok_or_else(|| "Claude credentials are missing accessToken.".to_string())?;
-    println!(
-        "[token-juice] Claude auth: requesting OAuth usage endpoint with resolved credentials."
-    );
 
     let client = reqwest::Client::new();
     let response = client
@@ -794,22 +442,41 @@ async fn fetch_claude_usage_oauth() -> Result<ClaudeUsageData, String> {
         .map_err(|e| format!("Claude OAuth request failed: {}", e))?;
 
     let status = response.status();
-    println!(
-        "[token-juice] Claude OAuth usage endpoint status: {}",
-        status
-    );
-    if !status.is_success() {
-        return Err(format!("Claude OAuth API returned HTTP {}", status));
-    }
-
     let body = response
         .text()
         .await
         .map_err(|e| format!("Failed to read Claude OAuth response body: {}", e))?;
-    println!(
-        "[token-juice] Claude OAuth raw response: {}",
-        &body[..body.len().min(500)]
-    );
+
+    if !status.is_success() {
+        println!(
+            "[token-juice] Claude OAuth API error: HTTP {} — {}",
+            status,
+            &body[..body.len().min(500)]
+        );
+
+        // Parse error body for a user-friendly message
+        if let Ok(err_val) = serde_json::from_str::<Value>(&body) {
+            if let Some(msg) = err_val
+                .get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str())
+            {
+                if msg.contains("scope") {
+                    return Err(format!(
+                        "Token missing required scope. {}. Re-run `claude login` or create a token with the user:profile scope.",
+                        msg
+                    ));
+                }
+                return Err(format!("Claude API error: {}", msg));
+            }
+        }
+
+        return Err(format!(
+            "Claude OAuth API returned HTTP {}. {}",
+            status,
+            &body[..body.len().min(200)]
+        ));
+    }
 
     let value: Value =
         serde_json::from_str(&body).map_err(|e| format!("Invalid Claude OAuth JSON: {}", e))?;
@@ -863,11 +530,6 @@ async fn fetch_claude_usage_oauth() -> Result<ClaudeUsageData, String> {
             (spend, limit)
         };
 
-    println!(
-        "[token-juice] Claude usage parsed: session={:.1}%, weekly={:.1}%, session_reset={:?}, weekly_reset={:?}, extra_spend={:?}, extra_limit={:?}",
-        session_percent_used, weekly_percent_used, session_reset, weekly_reset, extra_usage_spend, extra_usage_limit
-    );
-
     Ok(ClaudeUsageData {
         session_percent_used: clamp_percent(session_percent_used),
         weekly_percent_used: clamp_percent(weekly_percent_used),
@@ -879,353 +541,36 @@ async fn fetch_claude_usage_oauth() -> Result<ClaudeUsageData, String> {
     })
 }
 
-async fn fetch_claude_usage_web() -> Result<ClaudeUsageData, String> {
-    println!("[token-juice] Claude auth: entering web-cookie fallback.");
-    let session_keys = find_claude_session_cookies()?;
-    println!(
-        "[token-juice] Claude auth: found {} claude.ai sessionKey candidate(s).",
-        session_keys.len()
-    );
-    let client = reqwest::Client::new();
-
-    let mut last_org_error: Option<String> = None;
-    for (idx, session_key) in session_keys.iter().enumerate() {
-        let cookie_header = format!("sessionKey={}", session_key);
-        println!(
-            "[token-juice] Claude web: trying sessionKey candidate {}/{}...",
-            idx + 1,
-            session_keys.len()
-        );
-
-        let org_response = client
-            .get("https://claude.ai/api/organizations")
-            .header("Accept", "application/json")
-            .header("Cookie", &cookie_header)
-            .timeout(std::time::Duration::from_secs(15))
-            .send()
-            .await
-            .map_err(|e| format!("Failed to fetch Claude organizations: {}", e))?;
-        println!(
-            "[token-juice] Claude web organizations endpoint status: {}",
-            org_response.status()
-        );
-
-        if !org_response.status().is_success() {
-            let msg = format!(
-                "Claude organizations endpoint returned HTTP {} for sessionKey candidate {}/{}",
-                org_response.status(),
-                idx + 1,
-                session_keys.len()
-            );
-            last_org_error = Some(msg);
-            continue;
-        }
-
-        let org_body = org_response
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read Claude organizations body: {}", e))?;
-        let org_value: Value = serde_json::from_str(&org_body)
-            .map_err(|e| format!("Invalid Claude organizations JSON: {}", e))?;
-        let org_id = extract_org_id(&org_value).ok_or_else(|| {
-            "Could not find a Claude organization ID in organizations response.".to_string()
-        })?;
-
-        let usage_url = format!("https://claude.ai/api/organizations/{}/usage", org_id);
-        let usage_response = client
-            .get(&usage_url)
-            .header("Accept", "application/json")
-            .header("Cookie", &cookie_header)
-            .timeout(std::time::Duration::from_secs(15))
-            .send()
-            .await
-            .map_err(|e| format!("Failed to fetch Claude usage: {}", e))?;
-        println!(
-            "[token-juice] Claude web usage endpoint status: {}",
-            usage_response.status()
-        );
-
-        if !usage_response.status().is_success() {
-            let msg = format!(
-                "Claude usage endpoint returned HTTP {} for sessionKey candidate {}/{}",
-                usage_response.status(),
-                idx + 1,
-                session_keys.len()
-            );
-            last_org_error = Some(msg);
-            continue;
-        }
-
-        let usage_body = usage_response
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read Claude usage body: {}", e))?;
-        println!(
-            "[token-juice] Claude web usage raw response: {}",
-            &usage_body[..usage_body.len().min(500)]
-        );
-        let usage_value: Value = serde_json::from_str(&usage_body)
-            .map_err(|e| format!("Invalid Claude usage JSON: {}", e))?;
-
-        let session_percent_used =
-            extract_window_percent(&usage_value, &["five_hour", "current_session"]).unwrap_or(0.0);
-        let weekly_percent_used =
-            extract_window_percent(&usage_value, &["seven_day", "current_week"]).unwrap_or(0.0);
-        let session_reset = extract_window_reset(&usage_value, &["five_hour", "current_session"]);
-        let weekly_reset = extract_window_reset(&usage_value, &["seven_day", "current_week"]);
-
-        let overage_url = format!(
-            "https://claude.ai/api/organizations/{}/overage_spend_limit",
-            org_id
-        );
-        let mut extra_usage_spend = None;
-        let mut extra_usage_limit = None;
-        if let Ok(resp) = client
-            .get(&overage_url)
-            .header("Accept", "application/json")
-            .header("Cookie", &cookie_header)
-            .timeout(std::time::Duration::from_secs(15))
-            .send()
-            .await
-        {
-            if resp.status().is_success() {
-                if let Ok(body) = resp.text().await {
-                    if let Ok(v) = serde_json::from_str::<Value>(&body) {
-                        extra_usage_spend = value_to_f64(&v, &["spend", "used", "monthly_spend"]);
-                        extra_usage_limit = value_to_f64(&v, &["limit", "monthly_limit"]);
-                    }
-                }
-            }
-        }
-
-        let account_url = "https://claude.ai/api/account";
-        let mut plan_type = None;
-        if let Ok(resp) = client
-            .get(account_url)
-            .header("Accept", "application/json")
-            .header("Cookie", &cookie_header)
-            .timeout(std::time::Duration::from_secs(15))
-            .send()
-            .await
-        {
-            if resp.status().is_success() {
-                if let Ok(body) = resp.text().await {
-                    if let Ok(v) = serde_json::from_str::<Value>(&body) {
-                        plan_type = v
-                            .get("plan")
-                            .or_else(|| v.get("plan_type"))
-                            .or_else(|| v.get("subscription_tier"))
-                            .and_then(|x| x.as_str())
-                            .map(|x| x.to_string());
-                    }
-                }
-            }
-        }
-
-        println!(
-            "[token-juice] Claude web: selected sessionKey candidate {}/{}.",
-            idx + 1,
-            session_keys.len()
-        );
-        return Ok(ClaudeUsageData {
-            session_percent_used: clamp_percent(session_percent_used),
-            weekly_percent_used: clamp_percent(weekly_percent_used),
-            session_reset,
-            weekly_reset,
-            plan_type,
-            extra_usage_spend,
-            extra_usage_limit,
-        });
-    }
-
-    Err(last_org_error.unwrap_or_else(|| {
-        "Claude web fallback failed: all sessionKey candidates were rejected.".to_string()
-    }))
-}
-
-fn create_claude_window(app_handle: &AppHandle) -> Result<(), String> {
-    if let Some(window) = app_handle.get_webview_window("claude") {
-        let _ = window.show();
-        let _ = window.set_focus();
-        return Ok(());
-    }
-
-    WebviewWindowBuilder::new(app_handle, "claude", WebviewUrl::App("index.html".into()))
-        .title("Claude Juice")
-        .inner_size(70.0, 400.0)
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(true)
-        .resizable(false)
-        .skip_taskbar(true)
-        .shadow(false)
-        .build()
-        .map_err(|e| format!("Failed to create Claude window: {}", e))?;
-
-    Ok(())
-}
-
-fn create_settings_window(app_handle: &AppHandle) -> Result<(), String> {
-    if let Some(window) = app_handle.get_webview_window("settings") {
-        let _ = window.show();
-        let _ = window.set_focus();
-        return Ok(());
-    }
-
-    WebviewWindowBuilder::new(app_handle, "settings", WebviewUrl::App("index.html".into()))
-        .title("Refresh Interval")
-        .inner_size(300.0, 180.0)
-        .decorations(true)
-        .transparent(false)
-        .always_on_top(false)
-        .resizable(false)
-        .build()
-        .map_err(|e| format!("Failed to create settings window: {}", e))?;
-
-    Ok(())
-}
-
 // --- Tauri Commands ---
 
 #[tauri::command]
-async fn fetch_cursor_usage() -> Result<UsageData, String> {
-    println!("[token-juice] fetch_cursor_usage called");
-
-    let cookie_header = find_cursor_cookie_header()?;
-    println!("[token-juice] Got cookie header, making API request...");
-
-    let client = reqwest::Client::new();
-    let response = client
-        .get("https://cursor.com/api/usage-summary")
-        .header("Accept", "application/json")
-        .header("Cookie", &cookie_header)
-        .timeout(std::time::Duration::from_secs(15))
-        .send()
-        .await
-        .map_err(|e| {
-            let msg = format!("Network error: {}", e);
-            eprintln!("[token-juice] {}", msg);
-            msg
-        })?;
-
-    let status = response.status();
-    println!("[token-juice] API response status: {}", status);
-
-    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        let msg = "Not logged in. Please log into cursor.com in your browser and try again.";
-        eprintln!("[token-juice] {}", msg);
-        return Err(msg.to_string());
-    }
-
-    if !status.is_success() {
-        let msg = format!("Cursor API returned HTTP {}", status);
-        eprintln!("[token-juice] {}", msg);
-        return Err(msg);
-    }
-
-    // Read raw body first for debugging
-    let body = response.text().await.map_err(|e| {
-        let msg = format!("Failed to read response body: {}", e);
-        eprintln!("[token-juice] {}", msg);
-        msg
-    })?;
-    println!(
-        "[token-juice] Raw API response: {}",
-        &body[..body.len().min(500)]
-    );
-
-    let summary: CursorUsageSummary = serde_json::from_str(&body).map_err(|e| {
-        let msg = format!("Failed to parse Cursor API response: {}", e);
-        eprintln!("[token-juice] {}", msg);
-        msg
-    })?;
-
-    // Convert cents to USD
-    let plan = summary
-        .individual_usage
-        .as_ref()
-        .and_then(|u| u.plan.as_ref());
-    let on_demand = summary
-        .individual_usage
-        .as_ref()
-        .and_then(|u| u.on_demand.as_ref());
-
-    let used_cents = plan.and_then(|p| p.used).unwrap_or(0) as f64;
-    let limit_cents = plan.and_then(|p| p.limit).unwrap_or(0) as f64;
-    let remaining_cents = plan.and_then(|p| p.remaining).unwrap_or(0) as f64;
-
-    // Use dollar-based calculation: used / limit * 100
-    let percent_used = if limit_cents > 0.0 {
-        (used_cents / limit_cents) * 100.0
-    } else {
-        0.0
-    };
-
-    println!(
-        "[token-juice] Plan percent: {:.2}% (${:.2} / ${:.2})",
-        percent_used,
-        used_cents / 100.0,
-        limit_cents / 100.0
-    );
-
-    let od_used_cents = on_demand.and_then(|o| o.used).unwrap_or(0) as f64;
-    let od_limit_cents = on_demand.and_then(|o| o.limit);
-
-    let on_demand_percent_used = match od_limit_cents {
-        Some(limit) if limit > 0 => (od_used_cents / limit as f64) * 100.0,
-        _ => 0.0,
-    };
-
-    let result = UsageData {
-        percent_used,
-        used_usd: used_cents / 100.0,
-        limit_usd: limit_cents / 100.0,
-        remaining_usd: remaining_cents / 100.0,
-        on_demand_percent_used,
-        on_demand_used_usd: od_used_cents / 100.0,
-        on_demand_limit_usd: od_limit_cents.map(|c| c as f64 / 100.0),
-        billing_cycle_end: summary.billing_cycle_end,
-        membership_type: summary.membership_type,
-    };
-
-    println!(
-        "[token-juice] Plan: {:.1}% (${:.2} / ${:.2}) | On-demand: {:.1}% (${:.2} / ${}) | membership: {:?}",
-        result.percent_used, result.used_usd, result.limit_usd,
-        result.on_demand_percent_used, result.on_demand_used_usd,
-        result.on_demand_limit_usd.map(|v| format!("{:.2}", v)).unwrap_or("unlimited".to_string()),
-        result.membership_type
-    );
-
-    Ok(result)
+async fn fetch_claude_usage() -> Result<ClaudeUsageData, String> {
+    fetch_claude_usage_impl().await
 }
 
 #[tauri::command]
-async fn fetch_claude_usage() -> Result<ClaudeUsageData, String> {
-    println!("[token-juice] fetch_claude_usage called");
-    match fetch_claude_usage_oauth().await {
-        Ok(data) => {
-            println!("[token-juice] Claude auth: OAuth usage fetch succeeded.");
-            Ok(data)
-        }
-        Err(oauth_err) => {
-            if oauth_err.contains("No usable Claude OAuth credentials available") {
-                println!(
-                    "[token-juice] Claude OAuth credentials unavailable; using web fallback..."
-                );
-            } else {
-                println!(
-                    "[token-juice] Claude OAuth failed ({}), attempting web fallback...",
-                    oauth_err
-                );
-            }
-            fetch_claude_usage_web().await.map_err(|web_err| {
-                format!(
-                    "Claude OAuth failed: {}. Claude web fallback failed: {}",
-                    oauth_err, web_err
-                )
-            })
-        }
-    }
+async fn save_token(input: SaveTokenInput) -> Result<(), String> {
+    validate_claude_oauth_access_token(&input.access_token, "user input")?;
+    let blob = ClaudeOAuthBlob {
+        access_token: Some(input.access_token),
+        refresh_token: input.refresh_token,
+        expires_at: input.expires_at,
+        scopes: None,
+        subscription_type: None,
+        rate_limit_tier: None,
+    };
+    write_keychain_oauth_blob(&blob)
+}
+
+#[tauri::command]
+fn has_token() -> bool {
+    read_keychain_oauth_blob().is_ok()
+}
+
+#[tauri::command]
+fn clear_token() -> Result<(), String> {
+    delete_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+        .map_err(|e| format!("Failed to clear token: {}", e))
 }
 
 #[tauri::command]
@@ -1243,7 +588,7 @@ fn save_poll_interval(
     let multiplier: u64 = match interval_unit.as_str() {
         "minutes" => 60,
         "hours" => 3600,
-        _ => 1, // "seconds"
+        _ => 1,
     };
     let total_seconds = (interval_value * multiplier).max(10);
 
@@ -1252,14 +597,10 @@ fn save_poll_interval(
     save_settings(&settings);
     let _ = app_handle.emit("settings-changed", settings.clone());
     println!("[token-juice] Poll interval changed to {}s", total_seconds);
-    drop(settings);
-
-    if let Some(window) = app_handle.get_webview_window("settings") {
-        let _ = window.close();
-    }
-
     Ok(())
 }
+
+// --- Updates ---
 
 static UPDATE_CHECK_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
@@ -1267,7 +608,6 @@ async fn check_for_update(app: AppHandle, manual: bool) {
     if UPDATE_CHECK_IN_PROGRESS.swap(true, Ordering::SeqCst) {
         return;
     }
-
     check_for_update_inner(&app, manual).await;
     UPDATE_CHECK_IN_PROGRESS.store(false, Ordering::SeqCst);
 }
@@ -1318,12 +658,10 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
     let version = update.version.clone();
     let body = update.body.clone().unwrap_or_default();
 
-    // Close any existing update window
     if let Some(win) = app.get_webview_window("update") {
         let _ = win.close();
     }
 
-    // Create the update dialog window
     let update_window = match WebviewWindowBuilder::new(
         app,
         "update",
@@ -1343,7 +681,6 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
         }
     };
 
-    // When the frontend mounts, it emits "update-ready"; reply with the info.
     let ready_handle = app.clone();
     let ready_id = update_window.listen("update-ready", move |_: tauri::Event| {
         if let Some(win) = ready_handle.get_webview_window("update") {
@@ -1355,7 +692,6 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
         }
     });
 
-    // Listen for the user's response
     let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
     let tx = std::sync::Mutex::new(Some(tx));
     let response_id = update_window.listen("update-response", move |event: tauri::Event| {
@@ -1368,7 +704,6 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
         }
     });
 
-    // Also handle window close as "Not Now"
     let (close_tx, close_rx) = tokio::sync::oneshot::channel::<()>();
     let close_tx = std::sync::Mutex::new(Some(close_tx));
     let close_id = update_window.on_window_event(move |event| {
@@ -1379,18 +714,15 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
         }
     });
 
-    // Wait for either a response event or window close
     let accepted = tokio::select! {
         result = rx => result.unwrap_or(false),
         _ = close_rx => false,
     };
 
-    // Clean up listeners
     update_window.unlisten(response_id);
     update_window.unlisten(ready_id);
     let _ = close_id;
 
-    // Close the update window
     if let Some(win) = app.get_webview_window("update") {
         let _ = win.close();
     }
@@ -1413,6 +745,229 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
     }
 }
 
+// --- OAuth PKCE ---
+
+fn generate_code_verifier() -> String {
+    let mut rng = rand::rng();
+    let bytes: Vec<u8> = (0..32).map(|_| rng.random::<u8>()).collect();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&bytes)
+}
+
+fn generate_code_challenge(verifier: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(verifier.as_bytes());
+    let hash = hasher.finalize();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&hash)
+}
+
+const OAUTH_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+
+#[tauri::command]
+async fn login_oauth(app_handle: AppHandle) -> Result<(), String> {
+    let verifier = generate_code_verifier();
+    let challenge = generate_code_challenge(&verifier);
+
+    // Bind to a random available port
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("Failed to bind local server: {}", e))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to get local address: {}", e))?
+        .port();
+
+    let redirect_uri = format!("http://localhost:{}/callback", port);
+
+    // Generate state parameter for CSRF protection
+    let state = generate_code_verifier(); // reuse the same random generator
+
+    // Build authorization URL
+    let mut auth_url = Url::parse("https://claude.ai/oauth/authorize")
+        .map_err(|e| format!("Failed to parse auth URL: {}", e))?;
+    auth_url.query_pairs_mut()
+        .append_pair("response_type", "code")
+        .append_pair("client_id", OAUTH_CLIENT_ID)
+        .append_pair("redirect_uri", &redirect_uri)
+        .append_pair("scope", "user:profile user:inference")
+        .append_pair("code_challenge", &challenge)
+        .append_pair("code_challenge_method", "S256")
+        .append_pair("state", &state);
+
+    // Open browser
+    app_handle
+        .opener()
+        .open_url(auth_url.as_str(), None::<&str>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    // Set timeout on the listener
+    listener
+        .set_nonblocking(false)
+        .map_err(|e| format!("Failed to configure listener: {}", e))?;
+
+    // Wait for callback with timeout
+    let redirect_uri_clone = redirect_uri.clone();
+    let expected_state = state.clone();
+    let (code, callback_stream) = tokio::task::spawn_blocking(move || {
+        listener
+            .set_nonblocking(false)
+            .map_err(|e| format!("Failed to configure listener: {}", e))?;
+
+        // Use a polling approach with timeout
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        listener
+            .set_nonblocking(true)
+            .map_err(|e| format!("Failed to set non-blocking: {}", e))?;
+
+        let stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    if std::time::Instant::now() >= deadline {
+                        return Err(
+                            "Login timed out. Please try again.".to_string()
+                        );
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    continue;
+                }
+                Err(e) => return Err(format!("Failed to accept connection: {}", e)),
+            }
+        };
+
+        // Read the HTTP request
+        let mut reader = BufReader::new(&stream);
+        let mut request_line = String::new();
+        reader
+            .read_line(&mut request_line)
+            .map_err(|e| format!("Failed to read request: {}", e))?;
+
+        // Parse the request URL to extract the code
+        let path = request_line
+            .split_whitespace()
+            .nth(1)
+            .ok_or_else(|| "Invalid HTTP request".to_string())?;
+
+        let full_url = format!("http://localhost{}", path);
+        let parsed = Url::parse(&full_url)
+            .map_err(|e| format!("Failed to parse callback URL: {}", e))?;
+
+        // Check for error parameter
+        if let Some(error) = parsed.query_pairs().find(|(k, _)| k == "error") {
+            let error_desc = parsed
+                .query_pairs()
+                .find(|(k, _)| k == "error_description")
+                .map(|(_, v)| v.to_string())
+                .unwrap_or_else(|| error.1.to_string());
+            return Err(format!("Authorization denied: {}", error_desc));
+        }
+
+        // Validate state parameter
+        let returned_state = parsed
+            .query_pairs()
+            .find(|(k, _)| k == "state")
+            .map(|(_, v)| v.to_string())
+            .ok_or_else(|| "Missing state parameter in callback.".to_string())?;
+        if returned_state != expected_state {
+            return Err("State parameter mismatch — possible CSRF attack.".to_string());
+        }
+
+        let code = parsed
+            .query_pairs()
+            .find(|(k, _)| k == "code")
+            .map(|(_, v)| v.to_string())
+            .ok_or_else(|| "No authorization code received.".to_string())?;
+
+        // Drain remaining headers before writing response
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    if line.trim().is_empty() {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok((code, stream))
+    })
+    .await
+    .map_err(|e| format!("Callback task failed: {}", e))?
+    .map_err(|e: String| e)?;
+
+    // Send success response to browser before exchanging the code
+    let _ = tokio::task::spawn_blocking(move || {
+        let html = r#"<!DOCTYPE html>
+<html><head><title>Token Juice</title>
+<style>body{font-family:-apple-system,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1c1c1e;color:#fff}
+.container{text-align:center}.check{font-size:48px;margin-bottom:16px}h1{font-size:20px;font-weight:600;margin-bottom:8px}p{color:rgba(255,255,255,0.5);font-size:14px}</style>
+</head><body><div class="container"><div class="check">&#10003;</div><h1>Connected!</h1><p>You can close this tab and return to Token Juice.</p></div></body></html>"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            html.len(),
+            html
+        );
+        let mut stream = callback_stream;
+        let _ = stream.write_all(response.as_bytes());
+        let _ = stream.flush();
+    })
+    .await;
+
+    // Exchange authorization code for tokens
+    let client = reqwest::Client::new();
+    let token_response = client
+        .post("https://platform.claude.com/v1/oauth/token")
+        .json(&serde_json::json!({
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri_clone,
+            "code_verifier": verifier,
+            "client_id": OAUTH_CLIENT_ID,
+            "state": state,
+        }))
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| format!("Token exchange request failed: {}", e))?;
+
+    let status = token_response.status();
+    let body = token_response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read token response: {}", e))?;
+
+    if !status.is_success() {
+        println!("[token-juice] Token exchange failed: HTTP {} — {}", status, &body[..body.len().min(500)]);
+        return Err(format!("Token exchange failed (HTTP {}). Please try again.", status));
+    }
+
+    let token_data: OAuthTokenResponse = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse token response: {}", e))?;
+
+    let access_token = token_data
+        .access_token
+        .ok_or_else(|| "Token response missing access_token.".to_string())?;
+
+    let now = now_ms();
+    let expires_at = token_data.expires_in.map(|secs| now + secs * 1000);
+
+    let blob = ClaudeOAuthBlob {
+        access_token: Some(access_token),
+        refresh_token: token_data.refresh_token,
+        expires_at,
+        scopes: Some(vec!["user:profile".to_string(), "user:inference".to_string()]),
+        subscription_type: None,
+        rate_limit_tier: None,
+    };
+
+    write_keychain_oauth_blob(&blob)?;
+    println!("[token-juice] OAuth login succeeded, token saved to keychain.");
+
+    Ok(())
+}
+
+// --- Main ---
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1421,28 +976,21 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
+        .plugin(tauri_plugin_positioner::init())
         .manage(Mutex::new(load_settings()))
         .invoke_handler(tauri::generate_handler![
-            fetch_cursor_usage,
             fetch_claude_usage,
+            save_token,
+            has_token,
+            clear_token,
             get_settings,
-            save_poll_interval
+            save_poll_interval,
+            login_oauth
         ])
         .setup(|app| {
             let settings = load_settings();
 
-            let show_plan_item =
-                CheckMenuItemBuilder::with_id("show_plan", "Show Cursor Plan Usage")
-                    .checked(settings.show_plan)
-                    .build(app)?;
-            let show_od_item =
-                CheckMenuItemBuilder::with_id("show_on_demand", "Show Cursor On-Demand Usage")
-                    .checked(settings.show_on_demand)
-                    .build(app)?;
-            let show_claude_item =
-                CheckMenuItemBuilder::with_id("show_claude", "Show Claude Usage")
-                    .checked(settings.show_claude_window)
-                    .build(app)?;
+            // Build tray context menu
             let remaining_mode_item =
                 CheckMenuItemBuilder::with_id("remaining_mode", "Show Remaining (Juice Mode)")
                     .checked(settings.display_mode == "remaining")
@@ -1455,26 +1003,9 @@ pub fn run() {
                     .checked(is_autostart)
                     .build(app)?;
 
-            let about_metadata = AboutMetadata {
-                version: Some(app.package_info().version.to_string()),
-                authors: Some(vec!["Token Juice".to_string()]),
-                website: Some("https://github.com/lnmunhoz/cursor-juice".to_string()),
-                ..Default::default()
-            };
-            let about_item = PredefinedMenuItem::about(
-                app,
-                Some("About Token Juice"),
-                Some(about_metadata),
-            )?;
             let quit_item = PredefinedMenuItem::quit(app, Some("Quit Token Juice"))?;
 
-            let app_menu = SubmenuBuilder::new(app, "Token Juice")
-                .item(&about_item)
-                .separator()
-                .item(&show_plan_item)
-                .item(&show_od_item)
-                .item(&show_claude_item)
-                .separator()
+            let tray_menu = MenuBuilder::new(app)
                 .item(&remaining_mode_item)
                 .separator()
                 .text("configure_interval", "Configure Refresh Interval...")
@@ -1486,73 +1017,91 @@ pub fn run() {
                 .item(&quit_item)
                 .build()?;
 
-            let menu = MenuBuilder::new(app)
-                .items(&[&app_menu])
-                .build()?;
-
-            app.set_menu(menu)?;
-            if settings.show_claude_window {
-                let _ = create_claude_window(&app.handle());
-            }
-
-            app.on_menu_event(move |app_handle, event| {
-                let id = event.id().0.as_str();
-                match id {
-                    "show_plan" | "show_on_demand" | "show_claude" | "remaining_mode" => {
-                        let state = app_handle.state::<Mutex<Settings>>();
-                        let mut settings = state.lock().unwrap();
-                        if id == "show_plan" {
-                            settings.show_plan =
-                                show_plan_item.is_checked().unwrap_or(true);
-                        } else if id == "show_claude" {
-                            settings.show_claude_window =
-                                show_claude_item.is_checked().unwrap_or(false);
-                            if settings.show_claude_window {
-                                let _ = create_claude_window(app_handle);
-                            } else if let Some(window) = app_handle.get_webview_window("claude") {
-                                let _ = window.close();
+            // Build tray icon
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().cloned().unwrap())
+                .icon_as_template(true)
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                // Debounce: don't re-show if just hidden by focus loss
+                                let last_hide = PANEL_HIDDEN_AT_MS.load(Ordering::SeqCst);
+                                if now_ms() - last_hide < 300 {
+                                    return;
+                                }
+                                let _ = window.move_window(Position::TrayCenter);
+                                let _ = window.show();
+                                let _ = window.set_focus();
                             }
-                        } else if id == "remaining_mode" {
+                        }
+                    }
+                })
+                .on_menu_event(move |app_handle, event| {
+                    let id = event.id().0.as_str();
+                    match id {
+                        "remaining_mode" => {
+                            let state = app_handle.state::<Mutex<Settings>>();
+                            let mut settings = state.lock().unwrap();
                             let checked = remaining_mode_item.is_checked().unwrap_or(true);
                             settings.display_mode = if checked {
                                 "remaining".to_string()
                             } else {
                                 "usage".to_string()
                             };
-                        } else {
-                            settings.show_on_demand =
-                                show_od_item.is_checked().unwrap_or(true);
+                            save_settings(&settings);
+                            let _ = app_handle.emit("settings-changed", settings.clone());
                         }
-                        save_settings(&settings);
-                        let _ = app_handle.emit("settings-changed", settings.clone());
-                        println!(
-                            "[token-juice] Settings changed: show_plan={}, show_on_demand={}, show_claude_window={}, display_mode={}",
-                            settings.show_plan, settings.show_on_demand, settings.show_claude_window, settings.display_mode
-                        );
-                    }
-                    "configure_interval" => {
-                        let _ = create_settings_window(app_handle);
-                    }
-                    "check_for_updates" => {
-                        let handle = app_handle.clone();
-                        tauri::async_runtime::spawn(async move {
-                            check_for_update(handle, true).await;
-                        });
-                    }
-                    "launch_at_login" => {
-                        let manager = app_handle.autolaunch();
-                        let checked = launch_at_login_item.is_checked().unwrap_or(false);
-                        if checked {
-                            let _ = manager.enable();
-                        } else {
-                            let _ = manager.disable();
+                        "configure_interval" => {
+                            let _ = app_handle.emit("show-settings", ());
+                            if let Some(window) = app_handle.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
+                        "check_for_updates" => {
+                            let handle = app_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                check_for_update(handle, true).await;
+                            });
+                        }
+                        "launch_at_login" => {
+                            let manager = app_handle.autolaunch();
+                            let checked = launch_at_login_item.is_checked().unwrap_or(false);
+                            if checked {
+                                let _ = manager.enable();
+                            } else {
+                                let _ = manager.disable();
+                            }
+                        }
+                        _ => {}
                     }
-                    _ => {}
-                }
-            });
+                })
+                .build(app)?;
 
-            // Auto-check for updates on startup (silent — no "up to date" dialog)
+            // Focus-loss handler: hide panel when it loses focus
+            if let Some(window) = app.get_webview_window("main") {
+                let win = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Focused(false) = event {
+                        PANEL_HIDDEN_AT_MS.store(now_ms(), Ordering::SeqCst);
+                        let _ = win.hide();
+                    }
+                });
+            }
+
+            // Auto-check for updates on startup (silent)
             let startup_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 check_for_update(startup_handle, false).await;

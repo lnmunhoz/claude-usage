@@ -1,31 +1,14 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
-import cursorLogo from "./assets/cursor-logo.svg";
 import claudeLogo from "./assets/claude-logo.svg";
-
-// Test mode: simulates a fake spend delta on every poll to test animations
-const TEST_MODE = false;
-const FAKE_DELTA_USD = 1.5;
 
 // ---------------------------------------------------------------------------
 // Raw data interfaces (match Rust backend structs)
 // ---------------------------------------------------------------------------
-
-interface UsageData {
-  percentUsed: number;
-  usedUsd: number;
-  limitUsd: number;
-  remainingUsd: number;
-  onDemandPercentUsed: number;
-  onDemandUsedUsd: number;
-  onDemandLimitUsd: number | null;
-  billingCycleEnd: string | null;
-  membershipType: string | null;
-}
 
 interface ClaudeUsageData {
   sessionPercentUsed: number;
@@ -37,88 +20,36 @@ interface ClaudeUsageData {
   extraUsageLimit: number | null;
 }
 
-type Provider = "cursor" | "claude";
-
 type DisplayMode = "usage" | "remaining";
 
 interface Settings {
-  showPlan: boolean;
-  showOnDemand: boolean;
   displayMode: DisplayMode;
   pollIntervalSeconds: number;
-}
-
-// ---------------------------------------------------------------------------
-// Unified view model — the rendering layer only sees this
-// ---------------------------------------------------------------------------
-
-interface BarConfig {
-  percent: number;
-  fill: number; // clamped 0-100
-  label: string; // "P", "D", "S", "W"
-  color: string;
-  glow: string;
-}
-
-interface BarViewModel {
-  logo: string; // imported SVG path
-  primaryBar: BarConfig | null;
-  secondaryBar: BarConfig | null;
-  showBothBars: boolean;
-  planLabel: string | null; // membership type / plan name
-  spendDelta: string | null; // floating cost delta (Cursor only)
-  displayMode: DisplayMode; // "usage" or "remaining"
 }
 
 // ---------------------------------------------------------------------------
 // Color helpers
 // ---------------------------------------------------------------------------
 
-function getPlanColor(p: number) {
-  if (p < 50) return "#818cf8";
-  if (p < 75) return "#a78bfa";
-  if (p < 90) return "#f97316";
-  return "#ef4444";
-}
-function getPlanGlow(p: number) {
-  if (p < 50) return "rgba(129, 140, 248, 0.5)";
-  if (p < 75) return "rgba(167, 139, 250, 0.5)";
-  if (p < 90) return "rgba(249, 115, 22, 0.5)";
-  return "rgba(239, 68, 68, 0.5)";
-}
-function getOdColor(p: number) {
-  if (p < 50) return "#22c55e";
-  if (p < 75) return "#eab308";
-  if (p < 90) return "#f97316";
-  return "#ef4444";
-}
-function getOdGlow(p: number) {
-  if (p < 50) return "rgba(34, 197, 94, 0.5)";
-  if (p < 75) return "rgba(234, 179, 8, 0.5)";
-  if (p < 90) return "rgba(249, 115, 22, 0.5)";
-  return "rgba(239, 68, 68, 0.5)";
-}
-// Claude session (5h) — yellowish
-function getClaudeSessionColor(p: number) {
+function getSessionColor(p: number) {
   if (p < 50) return "#facc15";
   if (p < 75) return "#eab308";
   if (p < 90) return "#f97316";
   return "#ef4444";
 }
-function getClaudeSessionGlow(p: number) {
+function getSessionGlow(p: number) {
   if (p < 50) return "rgba(250, 204, 21, 0.5)";
   if (p < 75) return "rgba(234, 179, 8, 0.5)";
   if (p < 90) return "rgba(249, 115, 22, 0.5)";
   return "rgba(239, 68, 68, 0.5)";
 }
-// Claude weekly (7d) — orangeish
-function getClaudeWeeklyColor(p: number) {
+function getWeeklyColor(p: number) {
   if (p < 50) return "#f97316";
   if (p < 75) return "#ea580c";
   if (p < 90) return "#ef4444";
   return "#dc2626";
 }
-function getClaudeWeeklyGlow(p: number) {
+function getWeeklyGlow(p: number) {
   if (p < 50) return "rgba(249, 115, 22, 0.5)";
   if (p < 75) return "rgba(234, 88, 12, 0.5)";
   if (p < 90) return "rgba(239, 68, 68, 0.5)";
@@ -129,101 +60,35 @@ function clampFill(p: number) {
   return Math.min(100, Math.max(0, p));
 }
 
-// ---------------------------------------------------------------------------
-// Adapter: Cursor → BarViewModel
-// ---------------------------------------------------------------------------
-
 function computeFill(percent: number, mode: DisplayMode): number {
   return mode === "remaining" ? clampFill(100 - percent) : clampFill(percent);
 }
 
-function cursorToViewModel(
-  data: UsageData,
-  settings: {
-    showPlan: boolean;
-    showOnDemand: boolean;
-    displayMode: DisplayMode;
-  },
-  delta: string | null,
-): BarViewModel {
-  const planPercent = data.percentUsed;
-  const hasOnDemand =
-    data.onDemandLimitUsd != null && data.onDemandLimitUsd > 0;
-  const odPercent = data.onDemandPercentUsed;
+// ---------------------------------------------------------------------------
+// Format reset countdown
+// ---------------------------------------------------------------------------
 
-  const primaryBar: BarConfig | null = settings.showPlan
-    ? {
-        percent: computeFill(planPercent, settings.displayMode),
-        fill: computeFill(planPercent, settings.displayMode),
-        label: "P",
-        color: getPlanColor(planPercent),
-        glow: getPlanGlow(planPercent),
-      }
-    : null;
-
-  const secondaryBar: BarConfig | null =
-    settings.showOnDemand && hasOnDemand
-      ? {
-          percent: computeFill(odPercent, settings.displayMode),
-          fill: computeFill(odPercent, settings.displayMode),
-          label: "D",
-          color: getOdColor(odPercent),
-          glow: getOdGlow(odPercent),
-        }
-      : null;
-
-  const showBothBars = primaryBar != null && secondaryBar != null;
-
-  return {
-    logo: cursorLogo,
-    primaryBar,
-    secondaryBar,
-    showBothBars,
-    planLabel: data.membershipType ?? null,
-    spendDelta: delta,
-    displayMode: settings.displayMode,
-  };
+function formatResetTime(isoString: string | null): string | null {
+  if (!isoString) return null;
+  try {
+    const resetDate = new Date(isoString);
+    const now = new Date();
+    const diffMs = resetDate.getTime() - now.getTime();
+    if (diffMs <= 0) return "now";
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Adapter: Claude → BarViewModel
+// Settings view (inline)
 // ---------------------------------------------------------------------------
 
-function claudeToViewModel(
-  data: ClaudeUsageData,
-  mode: DisplayMode,
-): BarViewModel {
-  const sessionPercent = data.sessionPercentUsed;
-  const weeklyPercent = data.weeklyPercentUsed;
-
-  return {
-    logo: claudeLogo,
-    primaryBar: {
-      percent: computeFill(sessionPercent, mode),
-      fill: computeFill(sessionPercent, mode),
-      label: "5h",
-      color: getClaudeSessionColor(sessionPercent),
-      glow: getClaudeSessionGlow(sessionPercent),
-    },
-    secondaryBar: {
-      percent: computeFill(weeklyPercent, mode),
-      fill: computeFill(weeklyPercent, mode),
-      label: "Week",
-      color: getClaudeWeeklyColor(weeklyPercent),
-      glow: getClaudeWeeklyGlow(weeklyPercent),
-    },
-    showBothBars: true,
-    planLabel: data.planType ?? "claude",
-    spendDelta: null, // Claude doesn't track dollar spend deltas
-    displayMode: mode,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Settings view — rendered when window label is "settings"
-// ---------------------------------------------------------------------------
-
-function SettingsView() {
+function SettingsView({ onBack }: { onBack: () => void }) {
   const [value, setValue] = useState(60);
   const [unit, setUnit] = useState<"seconds" | "minutes" | "hours">("seconds");
   const [loaded, setLoaded] = useState(false);
@@ -250,6 +115,7 @@ function SettingsView() {
       intervalValue: value,
       intervalUnit: unit,
     });
+    onBack();
   };
 
   if (!loaded) return null;
@@ -280,6 +146,9 @@ function SettingsView() {
       <button className="settings-save" onClick={handleSave}>
         Save
       </button>
+      <button className="settings-back" onClick={onBack}>
+        Cancel
+      </button>
     </div>
   );
 }
@@ -302,23 +171,18 @@ function UpdateView() {
     const unlisten = listen<UpdateInfo>("update-info", (event) => {
       setInfo(event.payload);
     });
-
-    // Signal to Rust that we're ready to receive update info
     getCurrentWindow().emit("update-ready", {});
-
     return () => {
       unlisten.then((fn) => fn());
     };
   }, []);
 
   const handleUpdate = async () => {
-    const win = getCurrentWindow();
-    await win.emit("update-response", { accepted: true });
+    await getCurrentWindow().emit("update-response", { accepted: true });
   };
 
   const handleSkip = async () => {
-    const win = getCurrentWindow();
-    await win.emit("update-response", { accepted: false });
+    await getCurrentWindow().emit("update-response", { accepted: false });
   };
 
   if (!info) {
@@ -363,333 +227,315 @@ function UpdateView() {
 }
 
 // ---------------------------------------------------------------------------
+// Token Setup view
+// ---------------------------------------------------------------------------
+
+function SetupView({ onSaved }: { onSaved: () => void }) {
+  const [status, setStatus] = useState<"idle" | "waiting" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleLogin = async () => {
+    setStatus("waiting");
+    setError(null);
+    try {
+      await invoke("login_oauth");
+      onSaved();
+    } catch (err) {
+      setError(String(err));
+      setStatus("error");
+    }
+  };
+
+  return (
+    <div className="setup-view">
+      <img
+        src={claudeLogo}
+        alt="Claude"
+        className="setup-logo"
+        draggable={false}
+      />
+      <h2 className="setup-title">Connect Claude</h2>
+      <p className="setup-subtitle">
+        Sign in with your Anthropic account to view your usage.
+      </p>
+      {status === "waiting" && (
+        <div className="setup-waiting">
+          <div className="loading-dot" />
+          <span className="setup-waiting-text">Waiting for browser...</span>
+        </div>
+      )}
+      {error && <p className="setup-error">{error}</p>}
+      <button
+        className="setup-save"
+        onClick={handleLogin}
+        disabled={status === "waiting"}
+      >
+        {status === "waiting" ? "Waiting for browser..." : "Login with Claude"}
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Usage panel view
+// ---------------------------------------------------------------------------
+
+function UsageView({
+  data,
+  displayMode,
+  onDisconnect,
+}: {
+  data: ClaudeUsageData;
+  displayMode: DisplayMode;
+  onDisconnect: () => void;
+}) {
+  const sessionPercent = data.sessionPercentUsed;
+  const weeklyPercent = data.weeklyPercentUsed;
+  const sessionFill = computeFill(sessionPercent, displayMode);
+  const weeklyFill = computeFill(weeklyPercent, displayMode);
+
+  const sessionColor = getSessionColor(sessionPercent);
+  const sessionGlow = getSessionGlow(sessionPercent);
+  const weeklyColor = getWeeklyColor(weeklyPercent);
+  const weeklyGlow = getWeeklyGlow(weeklyPercent);
+
+  const sessionReset = formatResetTime(data.sessionReset);
+  const weeklyReset = formatResetTime(data.weeklyReset);
+
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <img
+          src={claudeLogo}
+          alt="Claude"
+          className="panel-logo"
+          draggable={false}
+        />
+        {data.planType && (
+          <span className="panel-plan">{data.planType}</span>
+        )}
+      </div>
+
+      <div className="panel-bars">
+        {/* 5-Hour Session bar */}
+        <div className="panel-bar-group">
+          <div className="panel-bar-label-row">
+            <span className="panel-bar-name">5-Hour Session</span>
+            <span className="panel-bar-pct">
+              {parseFloat(sessionFill.toFixed(1))}%{" "}
+              {displayMode === "remaining" ? "left" : "used"}
+            </span>
+          </div>
+          <div className="panel-bar-track">
+            <div
+              className="panel-bar-fill"
+              style={{
+                width: `${sessionFill}%`,
+                background: `linear-gradient(to right, ${sessionColor}, color-mix(in srgb, ${sessionColor}, white 20%))`,
+                boxShadow: `0 0 10px ${sessionGlow}`,
+              }}
+            />
+          </div>
+          {sessionReset && (
+            <span className="panel-bar-reset">Resets in {sessionReset}</span>
+          )}
+        </div>
+
+        {/* Weekly bar */}
+        <div className="panel-bar-group">
+          <div className="panel-bar-label-row">
+            <span className="panel-bar-name">Weekly</span>
+            <span className="panel-bar-pct">
+              {parseFloat(weeklyFill.toFixed(1))}%{" "}
+              {displayMode === "remaining" ? "left" : "used"}
+            </span>
+          </div>
+          <div className="panel-bar-track">
+            <div
+              className="panel-bar-fill"
+              style={{
+                width: `${weeklyFill}%`,
+                background: `linear-gradient(to right, ${weeklyColor}, color-mix(in srgb, ${weeklyColor}, white 20%))`,
+                boxShadow: `0 0 10px ${weeklyGlow}`,
+              }}
+            />
+          </div>
+          {weeklyReset && (
+            <span className="panel-bar-reset">Resets in {weeklyReset}</span>
+          )}
+        </div>
+
+        {/* Extra usage */}
+        {data.extraUsageSpend != null && (
+          <div className="panel-extra">
+            <span className="panel-extra-label">Extra Usage</span>
+            <span className="panel-extra-value">
+              ${data.extraUsageSpend.toFixed(2)}
+              {data.extraUsageLimit != null && (
+                <> / ${data.extraUsageLimit.toFixed(2)}</>
+              )}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <button className="panel-disconnect" onClick={onDisconnect}>
+        Disconnect
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // App component
 // ---------------------------------------------------------------------------
 
+type AppMode = "setup" | "usage" | "settings" | "update";
+
 function App() {
-  // --- Window mode ---
-  const [windowMode, setWindowMode] = useState<
-    "usage" | "settings" | "update"
-  >("usage");
-
-  // --- Provider detection ---
-  const [provider, setProvider] = useState<Provider | null>(null);
-
-  // --- Raw data from backend ---
-  const [cursorUsage, setCursorUsage] = useState<UsageData | null>(null);
+  const [mode, setMode] = useState<AppMode>("setup");
   const [claudeUsage, setClaudeUsage] = useState<ClaudeUsageData | null>(null);
-
-  // --- UI state ---
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [animating, setAnimating] = useState(false);
-  const [spendDelta, setSpendDelta] = useState<string | null>(null);
-  const [planPulsing, setPlanPulsing] = useState(false);
-  const [odPulsing, setOdPulsing] = useState(false);
-
-  // --- Settings ---
-  const [showPlan, setShowPlan] = useState(true);
-  const [showOnDemand, setShowOnDemand] = useState(true);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("remaining");
   const [pollIntervalSeconds, setPollIntervalSeconds] = useState(60);
-
-  // --- Delta tracking refs ---
   const isFirstLoad = useRef(true);
-  const prevPlanUsed = useRef<number | null>(null);
-  const prevOdUsed = useRef<number | null>(null);
-  const prevClaudeSession = useRef<number | null>(null);
-  const prevClaudeWeekly = useRef<number | null>(null);
 
-  // -------------------------------------------------------------------------
-  // Fetch — provider-specific, but isolated to data only
-  // -------------------------------------------------------------------------
-
-  const fetchUsage = useCallback(async () => {
-    if (!provider) return;
-
+  // Check if this is the update window
+  useEffect(() => {
     try {
-      if (provider === "claude") {
-        const data = await invoke<ClaudeUsageData>("fetch_claude_usage");
-        setClaudeUsage(data);
-        setCursorUsage(null);
-        setError(null);
-
-        const prevSession = prevClaudeSession.current;
-        const prevWeekly = prevClaudeWeekly.current;
-        const sessionDelta =
-          prevSession !== null ? data.sessionPercentUsed - prevSession : 0;
-        const weeklyDelta =
-          prevWeekly !== null ? data.weeklyPercentUsed - prevWeekly : 0;
-
-        if (sessionDelta > 0.01 || weeklyDelta > 0.01) {
-          if (sessionDelta > 0.01) setPlanPulsing(true);
-          if (weeklyDelta > 0.01) setOdPulsing(true);
-        }
-        if (!isFirstLoad.current) {
-          setAnimating(true);
-          setRefreshKey((k) => k + 1);
-        }
-
-        prevClaudeSession.current = data.sessionPercentUsed;
-        prevClaudeWeekly.current = data.weeklyPercentUsed;
-        setSpendDelta(null);
-      } else {
-        const data = await invoke<UsageData>("fetch_cursor_usage");
-        setCursorUsage(data);
-        setClaudeUsage(null);
-        setError(null);
-
-        const prevPlan = prevPlanUsed.current;
-        const prevOd = prevOdUsed.current;
-        let planDelta = prevPlan !== null ? data.usedUsd - prevPlan : 0;
-        let odDelta = prevOd !== null ? data.onDemandUsedUsd - prevOd : 0;
-        let totalDelta = planDelta + odDelta;
-
-        if (TEST_MODE && !isFirstLoad.current && totalDelta < 0.001) {
-          const fakePlan = Math.random() > 0.5;
-          planDelta = fakePlan ? FAKE_DELTA_USD : 0;
-          odDelta = fakePlan ? 0 : FAKE_DELTA_USD;
-          totalDelta = FAKE_DELTA_USD;
-        }
-
-        if (totalDelta > 0.001) {
-          setSpendDelta(`-$${totalDelta.toFixed(2)}`);
-          if (planDelta > 0.001) setPlanPulsing(true);
-          if (odDelta > 0.001) setOdPulsing(true);
-        }
-        if (!isFirstLoad.current) {
-          setAnimating(true);
-          setRefreshKey((k) => k + 1);
-        }
-
-        prevPlanUsed.current = data.usedUsd;
-        prevOdUsed.current = data.onDemandUsedUsd;
+      const label = getCurrentWindow().label;
+      if (label === "update") {
+        setMode("update");
+        setLoading(false);
+        return;
       }
+    } catch {
+      // not update window
+    }
 
-      isFirstLoad.current = false;
+    // Check for existing token
+    invoke<boolean>("has_token").then((hasToken) => {
+      if (hasToken) {
+        setMode("usage");
+      } else {
+        setMode("setup");
+        setLoading(false);
+      }
+    });
+  }, []);
+
+  // Load settings
+  useEffect(() => {
+    invoke<Settings>("get_settings").then((s) => {
+      setDisplayMode(s.displayMode ?? "remaining");
+      setPollIntervalSeconds(s.pollIntervalSeconds ?? 60);
+    });
+
+    const unlistenSettings = listen<Settings>("settings-changed", (event) => {
+      setDisplayMode(event.payload.displayMode ?? "remaining");
+      setPollIntervalSeconds(event.payload.pollIntervalSeconds ?? 60);
+    });
+
+    const unlistenShowSettings = listen("show-settings", () => {
+      setMode("settings");
+    });
+
+    return () => {
+      unlistenSettings.then((fn) => fn());
+      unlistenShowSettings.then((fn) => fn());
+    };
+  }, []);
+
+  // Fetch usage data
+  const fetchUsage = useCallback(async () => {
+    if (mode !== "usage") return;
+    try {
+      const data = await invoke<ClaudeUsageData>("fetch_claude_usage");
+      setClaudeUsage(data);
+      setError(null);
+      if (isFirstLoad.current) {
+        isFirstLoad.current = false;
+      }
     } catch (err) {
       console.error("usage fetch error:", err);
       setError(String(err));
     } finally {
       setLoading(false);
     }
-  }, [provider]);
-
-  // -------------------------------------------------------------------------
-  // Effects
-  // -------------------------------------------------------------------------
+  }, [mode]);
 
   useEffect(() => {
-    if (!animating) return;
-    const timer = setTimeout(() => setAnimating(false), 1100);
-    return () => clearTimeout(timer);
-  }, [animating]);
-
-  useEffect(() => {
-    if (!spendDelta) return;
-    const timer = setTimeout(() => setSpendDelta(null), 3700);
-    return () => clearTimeout(timer);
-  }, [spendDelta]);
-
-  useEffect(() => {
-    if (!planPulsing && !odPulsing) return;
-    const timer = setTimeout(() => {
-      setPlanPulsing(false);
-      setOdPulsing(false);
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [planPulsing, odPulsing]);
-
-  useEffect(() => {
-    try {
-      const label = getCurrentWindow().label;
-      if (label === "settings") {
-        setWindowMode("settings");
-      } else if (label === "update") {
-        setWindowMode("update");
-      } else {
-        setProvider(label === "claude" ? "claude" : "cursor");
-      }
-    } catch {
-      setProvider("cursor");
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!provider) return;
+    if (mode !== "usage") return;
+    setLoading(true);
     fetchUsage();
     const interval = setInterval(fetchUsage, pollIntervalSeconds * 1000);
     return () => clearInterval(interval);
-  }, [fetchUsage, provider, pollIntervalSeconds]);
+  }, [fetchUsage, pollIntervalSeconds, mode]);
 
-  useEffect(() => {
-    invoke<Settings>("get_settings").then((s) => {
-      setShowPlan(s.showPlan);
-      setShowOnDemand(s.showOnDemand);
-      setDisplayMode(s.displayMode ?? "remaining");
-      setPollIntervalSeconds(s.pollIntervalSeconds ?? 60);
-    });
-
-    const unlisten = listen<Settings>("settings-changed", (event) => {
-      setShowPlan(event.payload.showPlan);
-      setShowOnDemand(event.payload.showOnDemand);
-      setDisplayMode(event.payload.displayMode ?? "remaining");
-      setPollIntervalSeconds(event.payload.pollIntervalSeconds ?? 60);
-    });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [provider]);
-
-
-  // -------------------------------------------------------------------------
-  // Build view model — single place where provider data meets the view
-  // -------------------------------------------------------------------------
-
-  const vm: BarViewModel | null = useMemo(() => {
-    if (provider === "claude" && claudeUsage) {
-      return claudeToViewModel(claudeUsage, displayMode);
+  // Handle disconnect
+  const handleDisconnect = async () => {
+    try {
+      await invoke("clear_token");
+    } catch {
+      // ignore
     }
-    if (provider === "cursor" && cursorUsage) {
-      return cursorToViewModel(
-        cursorUsage,
-        { showPlan, showOnDemand, displayMode },
-        spendDelta,
-      );
-    }
-    return null;
-  }, [
-    provider,
-    cursorUsage,
-    claudeUsage,
-    showPlan,
-    showOnDemand,
-    displayMode,
-    spendDelta,
-  ]);
+    setClaudeUsage(null);
+    setError(null);
+    setLoading(true);
+    isFirstLoad.current = true;
+    setMode("setup");
+    setLoading(false);
+  };
+
+  // Handle token saved
+  const handleTokenSaved = () => {
+    setMode("usage");
+    setLoading(true);
+    isFirstLoad.current = true;
+  };
 
   // -------------------------------------------------------------------------
-  // Animation classes
+  // Render
   // -------------------------------------------------------------------------
 
-  const shimmerClass = animating ? "shimmer" : "";
-  const bounceClass = animating ? "bounce" : "";
-  const planPulseClass = planPulsing ? "pulse-glow" : "";
-  const odPulseClass = odPulsing ? "pulse-glow" : "";
-
-  // -------------------------------------------------------------------------
-  // Render — NO provider-specific branching below this line
-  // -------------------------------------------------------------------------
-
-  if (windowMode === "settings") {
-    return <SettingsView />;
-  }
-
-  if (windowMode === "update") {
+  if (mode === "update") {
     return <UpdateView />;
   }
 
+  if (mode === "setup") {
+    return <SetupView onSaved={handleTokenSaved} />;
+  }
+
+  if (mode === "settings") {
+    return <SettingsView onBack={() => setMode("usage")} />;
+  }
+
+  // Usage mode
   return (
-    <div className="widget" data-tauri-drag-region>
+    <div className="panel-container">
       {loading ? (
-        <div className="loading-indicator" data-tauri-drag-region>
+        <div className="panel-loading">
           <div className="loading-dot" />
+          <span className="loading-text">Loading usage...</span>
         </div>
       ) : error ? (
-        <div className="error-indicator" data-tauri-drag-region title={error}>
+        <div className="panel-error">
           <span className="error-icon">!</span>
+          <p className="error-text">{error}</p>
+          <button className="error-retry" onClick={fetchUsage}>
+            Retry
+          </button>
+          <button className="panel-disconnect" onClick={handleDisconnect}>
+            Disconnect
+          </button>
         </div>
-      ) : vm ? (
-        <>
-          <img
-            src={vm.logo}
-            alt=""
-            className="widget-logo"
-            data-tauri-drag-region
-            draggable={false}
-          />
-          <div className="bars-row" data-tauri-drag-region>
-            {vm.spendDelta && (
-              <span
-                key={`spend-${refreshKey}`}
-                className="spend-float"
-                data-tauri-drag-region
-              >
-                {vm.spendDelta}
-              </span>
-            )}
-
-            {/* Primary bar */}
-            {vm.primaryBar && (
-              <div className="bar-column" data-tauri-drag-region>
-                <div className="bar-track" data-tauri-drag-region>
-                  <div
-                    key={`plan-${refreshKey}`}
-                    className={`bar-fill ${shimmerClass} ${planPulseClass}`}
-                    data-tauri-drag-region
-                    style={{
-                      height: `${vm.primaryBar.fill}%`,
-                      background: `linear-gradient(to top, ${vm.primaryBar.color} 0%, ${vm.primaryBar.color} 30%, color-mix(in srgb, ${vm.primaryBar.color}, white 25%) 50%, ${vm.primaryBar.color} 70%, ${vm.primaryBar.color} 100%)`,
-                      backgroundSize: "100% 300%",
-                      boxShadow: `0 0 14px ${vm.primaryBar.glow}, 0 0 6px ${vm.primaryBar.glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
-                    }}
-                  />
-                </div>
-                <span
-                  key={`plan-label-${refreshKey}`}
-                  className={`bar-label ${bounceClass}`}
-                  data-tauri-drag-region
-                >
-                  {parseFloat(vm.primaryBar.percent.toFixed(1))}%
-                </span>
-                {vm.showBothBars && (
-                  <span className="bar-tag" data-tauri-drag-region>
-                    {vm.primaryBar.label}
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Secondary bar */}
-            {vm.secondaryBar && (
-              <div className="bar-column" data-tauri-drag-region>
-                <div className="bar-track" data-tauri-drag-region>
-                  <div
-                    key={`od-${refreshKey}`}
-                    className={`bar-fill ${shimmerClass} ${odPulseClass}`}
-                    data-tauri-drag-region
-                    style={{
-                      height: `${vm.secondaryBar.fill}%`,
-                      background: `linear-gradient(to top, ${vm.secondaryBar.color} 0%, ${vm.secondaryBar.color} 30%, color-mix(in srgb, ${vm.secondaryBar.color}, white 25%) 50%, ${vm.secondaryBar.color} 70%, ${vm.secondaryBar.color} 100%)`,
-                      backgroundSize: "100% 300%",
-                      boxShadow: `0 0 14px ${vm.secondaryBar.glow}, 0 0 6px ${vm.secondaryBar.glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
-                    }}
-                  />
-                </div>
-                <span
-                  key={`od-label-${refreshKey}`}
-                  className={`bar-label ${bounceClass}`}
-                  data-tauri-drag-region
-                >
-                  {parseFloat(vm.secondaryBar.percent.toFixed(1))}%
-                </span>
-                {vm.showBothBars && (
-                  <span className="bar-tag" data-tauri-drag-region>
-                    {vm.secondaryBar.label}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {vm.planLabel && (
-            <div className="plan-label" data-tauri-drag-region>
-              {vm.planLabel}
-            </div>
-          )}
-        </>
+      ) : claudeUsage ? (
+        <UsageView
+          data={claudeUsage}
+          displayMode={displayMode}
+          onDisconnect={handleDisconnect}
+        />
       ) : null}
     </div>
   );

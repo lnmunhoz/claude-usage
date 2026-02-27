@@ -10,19 +10,19 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
         "title": "Token Juice",
-        "width": 70,
-        "height": 400,
+        "width": 320,
+        "height": 480,
         "decorations": false,
-        "transparent": true,
+        "transparent": false,
         "alwaysOnTop": true,
         "resizable": false,
         "skipTaskbar": true,
-        "shadow": false
+        "shadow": true,
+        "visible": false
       }
     ],
     "security": {
@@ -43,7 +43,7 @@
     "macOS": {
       "entitlements": "./Entitlements.plist",
       "signingIdentity": null,
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "11.0"
     }
   },
   "plugins": {

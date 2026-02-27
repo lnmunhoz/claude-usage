@@ -9,325 +9,262 @@ body,
 #root {
   height: 100%;
   width: 100%;
-  background: transparent;
+  background: #1c1c1e;
   overflow: hidden;
 }
 
-.widget {
+/* ---------------------------------------------------------------------------
+   Panel container (usage mode)
+--------------------------------------------------------------------------- */
+
+.panel-container {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 12px 10px 20px 10px;
-  background: transparent;
-  border-radius: 16px;
-  border: 1px solid transparent;
-  cursor: grab;
-  user-select: none;
-  gap: 6px;
-  transition:
-    background 0.3s ease,
-    border-color 0.3s ease;
+  background: #1c1c1e;
+  color: #fff;
+  font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
 }
 
-.widget:hover {
-  background: rgba(20, 20, 24, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-.widget:active {
-  cursor: grabbing;
-}
-
-/* Provider logo at the top of the widget */
-.widget-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-  opacity: 0.85;
-  pointer-events: none;
-  flex-shrink: 0;
-  margin-bottom: 2px;
-}
-
-/* Two bars side by side */
-.bars-row {
-  flex: 1;
+.panel {
   width: 100%;
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  justify-content: center;
-  gap: 10px;
-  min-height: 0;
-  position: relative;
-}
-
-.bar-column {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  flex: 1;
-  min-height: 0;
+  padding: 20px;
+  gap: 16px;
 }
 
-/* Progress bar - slim liquid glass tube */
-.bar-track {
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel-logo {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  opacity: 0.9;
+}
+
+.panel-plan {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* ---------------------------------------------------------------------------
+   Horizontal progress bars
+--------------------------------------------------------------------------- */
+
+.panel-bars {
   flex: 1;
-  width: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  justify-content: center;
+}
+
+.panel-bar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.panel-bar-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.panel-bar-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.panel-bar-pct {
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 1);
+}
+
+.panel-bar-track {
+  width: 100%;
+  height: 16px;
   background: rgba(255, 255, 255, 0.06);
-  border-radius: 5px;
+  border-radius: 8px;
   overflow: hidden;
   position: relative;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow:
     inset 0 2px 4px rgba(0, 0, 0, 0.5),
     inset 0 -1px 2px rgba(255, 255, 255, 0.05);
-  min-height: 0;
 }
 
-.bar-fill {
+.panel-bar-fill {
   position: absolute;
-  bottom: 0;
+  top: 0;
   left: 0;
-  right: 0;
-  border-radius: 5px;
+  bottom: 0;
+  border-radius: 8px;
   overflow: hidden;
-  transition:
-    height 0.8s cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 0.5s ease;
-  /* Traveling light — a bright band sweeps bottom-to-top through the juice */
-  animation: juice-flow 3.5s ease-in-out infinite;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: juice-flow-h 3.5s ease-in-out infinite;
 }
 
-@keyframes juice-flow {
+@keyframes juice-flow-h {
   0% {
-    background-position: 0% 100%;
     filter: brightness(1) saturate(1);
   }
   50% {
-    background-position: 0% 0%;
     filter: brightness(1.12) saturate(1.08);
   }
   100% {
-    background-position: 0% 100%;
     filter: brightness(1) saturate(1);
   }
 }
 
-/* Glass highlight — vertical light strip on the left + liquid meniscus at top */
-.bar-fill::before {
+/* Glass highlight */
+.panel-bar-fill::before {
   content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  border-radius: 5px;
-  background:
-    /* Meniscus — bright highlight at the top surface of the liquid */
-    linear-gradient(
-      to bottom,
-      rgba(255, 255, 255, 0.5) 0%,
-      rgba(255, 255, 255, 0.15) 4px,
-      transparent 8px
-    ),
-    /* Vertical glass strip on the left */
-    linear-gradient(
-      to right,
-      rgba(255, 255, 255, 0.2) 0px,
-      rgba(255, 255, 255, 0.05) 2px,
-      transparent 4px
-    );
+  border-radius: 8px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.08) 40%,
+    transparent 60%
+  );
   pointer-events: none;
 }
 
-/* Rising bubble animation — a small bright dot floats up through the liquid */
-.bar-fill::after {
+/* Bubble animation */
+.panel-bar-fill::after {
   content: "";
   position: absolute;
-  width: 3px;
-  height: 3px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: radial-gradient(
     circle,
-    rgba(255, 255, 255, 0.6) 0%,
-    rgba(255, 255, 255, 0.15) 60%,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.1) 60%,
     transparent 100%
   );
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 8px;
   opacity: 0;
   pointer-events: none;
-  animation: bubble-rise 4s ease-in-out infinite 1s;
+  animation: bubble-slide 4s ease-in-out infinite 1s;
 }
 
-@keyframes bubble-rise {
+@keyframes bubble-slide {
   0% {
-    bottom: 5%;
+    right: 10%;
     opacity: 0;
   }
   10% {
-    opacity: 0.7;
+    opacity: 0.6;
   }
   50% {
-    opacity: 0.5;
-    /* Slight horizontal wobble */
-    transform: translateX(calc(-50% + 1px));
+    opacity: 0.4;
+    transform: translateY(calc(-50% + 1px));
   }
   70% {
-    opacity: 0.3;
-    transform: translateX(calc(-50% - 1px));
+    opacity: 0.2;
+    transform: translateY(calc(-50% - 1px));
   }
   90% {
     opacity: 0;
   }
   100% {
-    bottom: 92%;
+    right: 90%;
     opacity: 0;
-    transform: translateX(-50%);
+    transform: translateY(-50%);
   }
 }
 
-/* Shimmer sweep on data update — brighter and wider */
-.bar-fill.shimmer {
-  animation: juice-shimmer-flash 1s ease-out;
-}
-
-@keyframes juice-shimmer-flash {
-  0% {
-    filter: brightness(1) saturate(1);
-  }
-  15% {
-    filter: brightness(1.9) saturate(1.4);
-  }
-  40% {
-    filter: brightness(1.4) saturate(1.2);
-  }
-  100% {
-    filter: brightness(1) saturate(1);
-  }
-}
-
-/* Pulse glow on the bar that changed — stronger, juicier */
-.bar-fill.pulse-glow {
-  animation: bar-pulse 1.5s ease-out;
-}
-
-@keyframes bar-pulse {
-  0% {
-    filter: brightness(1) saturate(1);
-  }
-  20% {
-    filter: brightness(2) saturate(1.5);
-  }
-  50% {
-    filter: brightness(1.4) saturate(1.2);
-  }
-  100% {
-    filter: brightness(1) saturate(1);
-  }
-}
-
-/* Labels */
-.bar-label {
+.panel-bar-reset {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
   font-family: "SF Mono", "Menlo", "Monaco", monospace;
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 1);
-  letter-spacing: -0.02em;
-  line-height: 1;
-  text-align: center;
-  transition: transform 0.3s ease;
 }
 
-.bar-label.bounce {
-  animation: label-bounce 0.4s ease-out;
-}
+/* ---------------------------------------------------------------------------
+   Extra usage
+--------------------------------------------------------------------------- */
 
-@keyframes label-bounce {
-  0% {
-    transform: scale(1);
-  }
-  40% {
-    transform: scale(1.2);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-/* Tag below the percentage (P = plan, D = on-demand) */
-.bar-tag {
-  border-radius: 4px;
+.panel-extra {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Floating spend delta - appears at top of bars, centered */
-.spend-float {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
+.panel-extra-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.panel-extra-value {
   font-family: "SF Mono", "Menlo", "Monaco", monospace;
   font-size: 13px;
-  font-weight: 400;
-  color: rgba(222, 24, 24, 0.95);
-  text-align: center;
-  line-height: 1;
-  pointer-events: none;
-  white-space: nowrap;
-  z-index: 10;
-  animation: float-away 3.5s ease-out forwards;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
 }
 
-@keyframes float-away {
-  0% {
-    opacity: 1;
-    top: -20px;
-  }
-  50% {
-    opacity: 0.9;
-  }
-  75% {
-    opacity: 0.5;
-  }
-  100% {
-    opacity: 0;
-    top: -40px;
-  }
+/* ---------------------------------------------------------------------------
+   Disconnect button
+--------------------------------------------------------------------------- */
+
+.panel-disconnect {
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-/* Plan label */
-.plan-label {
-  font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
-  font-size: 9px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.7);
-  text-align: center;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  line-height: 1;
+.panel-disconnect:hover {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
 }
 
-/* Loading state */
-.loading-indicator {
+/* ---------------------------------------------------------------------------
+   Loading state
+--------------------------------------------------------------------------- */
+
+.panel-loading {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
+  gap: 12px;
 }
 
 .loading-dot {
@@ -350,30 +287,155 @@ body,
   }
 }
 
-/* Error state */
-.error-indicator {
+.loading-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+   Error state
+--------------------------------------------------------------------------- */
+
+.panel-error {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
+  gap: 12px;
+  padding: 24px;
 }
 
 .error-icon {
-  width: 20px;
-  height: 20px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: rgba(239, 68, 68, 0.2);
-  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 16px;
   font-weight: 700;
   color: #ef4444;
   font-family: "SF Mono", "Menlo", "Monaco", monospace;
 }
 
-/* Settings view */
+.error-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.error-retry {
+  padding: 6px 20px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.error-retry:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Token Setup view
+--------------------------------------------------------------------------- */
+
+.setup-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 32px 24px;
+  height: 100%;
+  font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  background: #1c1c1e;
+  color: #fff;
+}
+
+.setup-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  opacity: 0.9;
+}
+
+.setup-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.setup-subtitle {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.setup-subtitle code {
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.setup-waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.setup-waiting-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.setup-error {
+  font-size: 12px;
+  color: #ef4444;
+  text-align: center;
+}
+
+.setup-save {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  background: #818cf8;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.setup-save:hover:not(:disabled) {
+  background: #6366f1;
+}
+
+.setup-save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------------------------
+   Settings view
+--------------------------------------------------------------------------- */
+
 .settings-view {
   display: flex;
   flex-direction: column;
@@ -447,7 +509,26 @@ body,
   background: #6366f1;
 }
 
-/* ---- Update dialog ---- */
+.settings-back {
+  padding: 6px 24px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settings-back:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Update dialog
+--------------------------------------------------------------------------- */
 
 .update-view {
   display: flex;
