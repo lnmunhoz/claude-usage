@@ -2,7 +2,7 @@
 
 This document describes the complete OAuth 2.0 PKCE (Proof Key for Code Exchange) flow used to authenticate with Anthropic's API and obtain tokens with the correct scopes for the usage API.
 
-This was reverse-engineered from Claude Code's (`@anthropic-ai/claude-code`) bundled source and validated through trial and error during Token Juice development.
+This was reverse-engineered from Claude Code's (`@anthropic-ai/claude-code`) bundled source and validated through trial and error during Claude Usage development.
 
 ---
 
@@ -321,13 +321,13 @@ The `utilization` field is a percentage (0–100) representing how much of the r
 
 | Field   | Value                    |
 | ------- | ------------------------ |
-| Service | `com.tokenjuice.app`     |
+| Service | `app.claudeusage.desktop`     |
 | Account | `claude-oauth`           |
 
 To manually clear a stored token:
 
 ```bash
-security delete-generic-password -s "com.tokenjuice.app" -a "claude-oauth"
+security delete-generic-password -s "app.claudeusage.desktop" -a "claude-oauth"
 ```
 
 ---

@@ -198,7 +198,7 @@ function UpdateView() {
     <div className="update-view" data-tauri-drag-region>
       <img
         src={appLogo}
-        alt="Token Juice"
+        alt="Claude Usage"
         className="update-logo"
         draggable={false}
         data-tauri-drag-region
@@ -207,7 +207,7 @@ function UpdateView() {
         Update Available
       </h2>
       <p className="update-version" data-tauri-drag-region>
-        Token Juice v{info.version}
+        Claude Usage v{info.version}
       </p>
       {info.body && (
         <div className="update-notes" data-tauri-drag-region>

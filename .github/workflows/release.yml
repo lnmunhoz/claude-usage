@@ -82,7 +82,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: v__VERSION__
-          releaseName: 'Token Juice v__VERSION__'
+          releaseName: 'Claude Usage v__VERSION__'
           releaseBody: 'See the assets to download and install this version.'
           releaseDraft: true
           prerelease: false

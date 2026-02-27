@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="design/icon-original.png" alt="Token Juice" width="128" height="128" />
+  <img src="design/icon-original.png" alt="Claude Usage" width="128" height="128" />
 </p>
 
-<h1 align="center">Token Juice</h1>
+<h1 align="center">Claude Usage</h1>
 
 <p align="center">
   A sleek, always-on-top desktop widget that monitors your real-time API usage for <strong>Cursor</strong> and <strong>Claude</strong>.
@@ -42,8 +42,8 @@
 
 ```bash
 # Clone the repo
-git clone https://github.com/lnmunhoz/token-juice.git
-cd token-juice
+git clone https://github.com/lnmunhoz/claude-usage.git
+cd claude-usage
 
 # Install dependencies
 pnpm install

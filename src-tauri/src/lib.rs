@@ -22,7 +22,7 @@ use tauri_plugin_positioner::{Position, WindowExt as PositionerExt};
 use tauri_plugin_updater::UpdaterExt;
 use url::Url;
 
-const KEYCHAIN_SERVICE: &str = "com.tokenjuice.app";
+const KEYCHAIN_SERVICE: &str = "app.claudeusage.desktop";
 const KEYCHAIN_ACCOUNT: &str = "claude-oauth";
 
 // Wrapper so we can manage TrayIcon separately from Settings
@@ -172,7 +172,7 @@ struct SaveTokenInput {
 fn settings_path() -> PathBuf {
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("token-juice");
+        .join("claude-usage");
     config_dir.join("settings.json")
 }
 
@@ -360,7 +360,7 @@ async fn refresh_claude_token(
     refresh_token: &str,
     blob: &ClaudeOAuthBlob,
 ) -> Result<ClaudeCredentials, String> {
-    println!("[token-juice] Claude auth: attempting OAuth token refresh...");
+    println!("[claude-usage] Claude auth: attempting OAuth token refresh...");
 
     let client = reqwest::Client::new();
     let response = client
@@ -424,12 +424,12 @@ async fn refresh_claude_token(
 
     if let Err(e) = write_keychain_oauth_blob(&updated_blob) {
         println!(
-            "[token-juice] Claude auth: warning - could not update keychain ({}). Token will work for this session only.",
+            "[claude-usage] Claude auth: warning - could not update keychain ({}). Token will work for this session only.",
             e
         );
     }
 
-    println!("[token-juice] Claude auth: token refresh succeeded.");
+    println!("[claude-usage] Claude auth: token refresh succeeded.");
     Ok(ClaudeCredentials {
         access_token: Some(new_access_token),
         rate_limit_tier: updated_blob.rate_limit_tier,
@@ -451,7 +451,7 @@ async fn load_claude_credentials() -> Result<ClaudeCredentials, String> {
     if let Some(expires_at_ms) = oauth.expires_at {
         let now = now_ms();
         if expires_at_ms <= now + 60_000 {
-            println!("[token-juice] Claude auth: token expired, attempting refresh...");
+            println!("[claude-usage] Claude auth: token expired, attempting refresh...");
             if let Some(ref refresh_token) = oauth.refresh_token {
                 return refresh_claude_token(refresh_token, &oauth).await;
             } else {
@@ -496,7 +496,7 @@ async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, String> {
 
     if !status.is_success() {
         println!(
-            "[token-juice] Claude OAuth API error: HTTP {} — {}",
+            "[claude-usage] Claude OAuth API error: HTTP {} — {}",
             status,
             &body[..body.len().min(500)]
         );
@@ -663,7 +663,7 @@ fn save_poll_interval(
     settings.poll_interval_seconds = total_seconds;
     save_settings(&settings);
     let _ = app_handle.emit("settings-changed", settings.clone());
-    println!("[token-juice] Poll interval changed to {}s", total_seconds);
+    println!("[claude-usage] Poll interval changed to {}s", total_seconds);
     Ok(())
 }
 
@@ -694,7 +694,7 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
     let updater = match app.updater() {
         Ok(u) => u,
         Err(e) => {
-            println!("[token-juice] Updater unavailable: {}", e);
+            println!("[claude-usage] Updater unavailable: {}", e);
             return;
         }
     };
@@ -702,7 +702,7 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
     let update = match updater.check().await {
         Ok(Some(u)) => u,
         Ok(None) => {
-            println!("[token-juice] No update available.");
+            println!("[claude-usage] No update available.");
             if manual {
                 app.dialog()
                     .message("You're on the latest version.")
@@ -714,7 +714,7 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
             return;
         }
         Err(e) => {
-            println!("[token-juice] Update check failed: {}", e);
+            println!("[claude-usage] Update check failed: {}", e);
             if manual {
                 app.dialog()
                     .message("Failed to check for updates. Please try again later.")
@@ -728,7 +728,7 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
     };
 
     println!(
-        "[token-juice] Update available: v{} (notes: {:?})",
+        "[claude-usage] Update available: v{} (notes: {:?})",
         update.version,
         update.body
     );
@@ -745,7 +745,7 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
         "update",
         WebviewUrl::App("index.html".into()),
     )
-    .title("Token Juice Update")
+    .title("Claude Usage Update")
     .inner_size(340.0, 400.0)
     .resizable(false)
     .center()
@@ -754,7 +754,7 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
     {
         Ok(w) => w,
         Err(e) => {
-            println!("[token-juice] Failed to create update window: {}", e);
+            println!("[claude-usage] Failed to create update window: {}", e);
             return;
         }
     };
@@ -806,9 +806,9 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
     }
 
     if accepted {
-        println!("[token-juice] User accepted update, downloading...");
+        println!("[claude-usage] User accepted update, downloading...");
         if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
-            println!("[token-juice] Update install failed: {}", e);
+            println!("[claude-usage] Update install failed: {}", e);
             app.dialog()
                 .message(format!("Failed to install update: {}", e))
                 .title("Update Error")
@@ -819,7 +819,7 @@ async fn check_for_update_inner(app: &AppHandle, manual: bool) {
         }
         app.restart();
     } else {
-        println!("[token-juice] User declined update.");
+        println!("[claude-usage] User declined update.");
     }
 }
 
@@ -976,10 +976,10 @@ async fn login_oauth(app_handle: AppHandle) -> Result<(), String> {
     // Send success response to browser before exchanging the code
     let _ = tokio::task::spawn_blocking(move || {
         let html = r#"<!DOCTYPE html>
-<html><head><title>Token Juice</title>
+<html><head><title>Claude Usage</title>
 <style>body{font-family:-apple-system,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1c1c1e;color:#fff}
 .container{text-align:center}.check{font-size:48px;margin-bottom:16px}h1{font-size:20px;font-weight:600;margin-bottom:8px}p{color:rgba(255,255,255,0.5);font-size:14px}</style>
-</head><body><div class="container"><div class="check">&#10003;</div><h1>Connected!</h1><p>You can close this tab and return to Token Juice.</p></div></body></html>"#;
+</head><body><div class="container"><div class="check">&#10003;</div><h1>Connected!</h1><p>You can close this tab and return to Claude Usage.</p></div></body></html>"#;
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
             html.len(),
@@ -1015,7 +1015,7 @@ async fn login_oauth(app_handle: AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to read token response: {}", e))?;
 
     if !status.is_success() {
-        println!("[token-juice] Token exchange failed: HTTP {} — {}", status, &body[..body.len().min(500)]);
+        println!("[claude-usage] Token exchange failed: HTTP {} — {}", status, &body[..body.len().min(500)]);
         return Err(format!("Token exchange failed (HTTP {}). Please try again.", status));
     }
 
@@ -1049,7 +1049,7 @@ async fn login_oauth(app_handle: AppHandle) -> Result<(), String> {
     };
 
     write_keychain_oauth_blob(&blob)?;
-    println!("[token-juice] OAuth login succeeded, token saved to keychain.");
+    println!("[claude-usage] OAuth login succeeded, token saved to keychain.");
 
     Ok(())
 }
@@ -1092,7 +1092,7 @@ pub fn run() {
                     .checked(is_autostart)
                     .build(app)?;
 
-            let quit_item = PredefinedMenuItem::quit(app, Some("Quit Token Juice"))?;
+            let quit_item = PredefinedMenuItem::quit(app, Some("Quit Claude Usage"))?;
 
             let tray_menu = MenuBuilder::new(app)
                 .item(&remaining_mode_item)
