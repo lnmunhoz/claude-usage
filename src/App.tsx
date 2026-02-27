@@ -370,14 +370,25 @@ function UsageView({
           <div className="panel-extra">
             <span className="panel-extra-label">Extra Usage</span>
             <span className="panel-extra-value">
-              ${data.extraUsageSpend.toFixed(2)}
+              ${(data.extraUsageSpend / 100).toFixed(2)}
               {data.extraUsageLimit != null && (
-                <> / ${data.extraUsageLimit.toFixed(2)}</>
+                <> / ${(data.extraUsageLimit / 100).toFixed(2)}</>
               )}
             </span>
           </div>
         )}
       </div>
+
+      <button
+        className="panel-link"
+        onClick={() => {
+          import("@tauri-apps/plugin-opener").then((m) =>
+            m.openUrl("https://claude.ai/settings/usage")
+          );
+        }}
+      >
+        Open Claude Usage
+      </button>
 
       <button className="panel-disconnect" onClick={onDisconnect}>
         Disconnect

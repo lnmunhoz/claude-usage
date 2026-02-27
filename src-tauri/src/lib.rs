@@ -83,6 +83,7 @@ impl Default for Settings {
 // --- Credentials ---
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ClaudeCredentials {
     #[serde(rename = "accessToken", alias = "access_token")]
     access_token: Option<String>,
@@ -138,6 +139,17 @@ struct ClaudeOAuthUsageResponse {
     five_hour: Option<ClaudeUsageWindow>,
     seven_day: Option<ClaudeUsageWindow>,
     extra_usage: Option<ClaudeExtraUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeProfileResponse {
+    organization: Option<ClaudeProfileOrganization>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeProfileOrganization {
+    organization_type: Option<String>,
+    rate_limit_tier: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -211,18 +223,35 @@ fn validate_claude_oauth_access_token(access_token: &str, source: &str) -> Resul
     ))
 }
 
-fn plan_type_from_rate_tier(rate_limit_tier: Option<&str>) -> Option<String> {
-    let tier = rate_limit_tier?.to_lowercase();
-    if tier.contains("enterprise") {
-        Some("enterprise".to_string())
-    } else if tier.contains("team") {
-        Some("team".to_string())
-    } else if tier.contains("max") {
-        Some("max".to_string())
-    } else if tier.contains("pro") {
-        Some("pro".to_string())
+fn plan_display_from_profile(org: &ClaudeProfileOrganization) -> Option<String> {
+    let tier = org.rate_limit_tier.as_deref().unwrap_or("");
+    let org_type = org.organization_type.as_deref().unwrap_or("");
+
+    // Extract multiplier from tier string like "default_claude_max_20x"
+    let multiplier = tier
+        .split('_')
+        .rev()
+        .find(|s| s.ends_with('x') && s[..s.len() - 1].parse::<u32>().is_ok())
+        .map(|s| s.to_uppercase());
+
+    // Determine base plan name
+    let base = if org_type.contains("max") || tier.contains("max") {
+        "Max"
+    } else if org_type.contains("pro") || tier.contains("pro") {
+        "Pro"
+    } else if org_type.contains("team") || tier.contains("team") {
+        "Team"
+    } else if org_type.contains("enterprise") || tier.contains("enterprise") {
+        "Enterprise"
+    } else if !org_type.is_empty() {
+        return Some(org_type.to_string());
     } else {
-        Some(tier)
+        return None;
+    };
+
+    match multiplier {
+        Some(m) => Some(format!("{} {}", base, m)),
+        None => Some(base.to_string()),
     }
 }
 
@@ -355,8 +384,19 @@ async fn refresh_claude_token(
         .text()
         .await
         .map_err(|e| format!("Failed to read token refresh response: {}", e))?;
+
     let token_resp: OAuthTokenResponse = serde_json::from_str(&body)
         .map_err(|e| format!("Failed to parse token refresh response: {}", e))?;
+
+    // Try to extract rate_limit_tier from the full refresh response
+    let refresh_value: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+    let refreshed_tier = refresh_value
+        .get("rate_limit_tier")
+        .or_else(|| refresh_value.get("rateLimitTier"))
+        .or_else(|| refresh_value.get("membership_type"))
+        .or_else(|| refresh_value.get("subscription_type"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     let new_access_token = token_resp
         .access_token
@@ -377,6 +417,10 @@ async fn refresh_claude_token(
     updated_blob.access_token = Some(new_access_token.clone());
     updated_blob.refresh_token = Some(new_refresh);
     updated_blob.expires_at = new_expires_at;
+    // Prefer freshly-returned tier; fall back to what was already stored
+    if refreshed_tier.is_some() {
+        updated_blob.rate_limit_tier = refreshed_tier;
+    }
 
     if let Err(e) = write_keychain_oauth_blob(&updated_blob) {
         println!(
@@ -533,12 +577,32 @@ async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, String> {
             (spend, limit)
         };
 
+    // Fetch plan type from the profile endpoint
+    let plan_type = match client
+        .get("https://api.anthropic.com/api/oauth/profile")
+        .header("Accept", "application/json")
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("anthropic-beta", "oauth-2025-04-20")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => resp
+            .text()
+            .await
+            .ok()
+            .and_then(|b| serde_json::from_str::<ClaudeProfileResponse>(&b).ok())
+            .and_then(|p| p.organization)
+            .and_then(|org| plan_display_from_profile(&org)),
+        _ => None,
+    };
+
     Ok(ClaudeUsageData {
         session_percent_used: clamp_percent(session_percent_used),
         weekly_percent_used: clamp_percent(weekly_percent_used),
         session_reset,
         weekly_reset,
-        plan_type: plan_type_from_rate_tier(credentials.rate_limit_tier.as_deref()),
+        plan_type,
         extra_usage_spend,
         extra_usage_limit,
     })
@@ -958,6 +1022,16 @@ async fn login_oauth(app_handle: AppHandle) -> Result<(), String> {
     let token_data: OAuthTokenResponse = serde_json::from_str(&body)
         .map_err(|e| format!("Failed to parse token response: {}", e))?;
 
+    // Try to extract rate_limit_tier from the full token response
+    let token_value: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+    let rate_limit_tier = token_value
+        .get("rate_limit_tier")
+        .or_else(|| token_value.get("rateLimitTier"))
+        .or_else(|| token_value.get("membership_type"))
+        .or_else(|| token_value.get("subscription_type"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
     let access_token = token_data
         .access_token
         .ok_or_else(|| "Token response missing access_token.".to_string())?;
@@ -971,7 +1045,7 @@ async fn login_oauth(app_handle: AppHandle) -> Result<(), String> {
         expires_at,
         scopes: Some(vec!["user:profile".to_string(), "user:inference".to_string()]),
         subscription_type: None,
-        rate_limit_tier: None,
+        rate_limit_tier,
     };
 
     write_keychain_oauth_blob(&blob)?;
@@ -1032,9 +1106,12 @@ pub fn run() {
                 .item(&quit_item)
                 .build()?;
 
-            // Build tray icon
+            // Build tray icon (use dedicated tray icon – black silhouette on transparent)
+            let tray_icon_bytes = include_bytes!("../icons/tray-icon@2x.png");
+            let tray_icon_image = tauri::image::Image::from_bytes(tray_icon_bytes)
+                .expect("Failed to load tray icon");
             let tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().cloned().unwrap())
+                .icon(tray_icon_image)
                 .icon_as_template(true)
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
