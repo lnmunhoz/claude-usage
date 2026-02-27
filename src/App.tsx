@@ -457,6 +457,9 @@ function App() {
       if (isFirstLoad.current) {
         isFirstLoad.current = false;
       }
+      // Update menu bar tray text with session percentage left
+      const pctLeft = (100 - data.sessionPercentUsed).toFixed(0);
+      await invoke("update_tray_title", { title: `${pctLeft}%` });
     } catch (err) {
       console.error("usage fetch error:", err);
       setError(String(err));
@@ -480,6 +483,7 @@ function App() {
     } catch {
       // ignore
     }
+    await invoke("update_tray_title", { title: null }).catch(() => {});
     setClaudeUsage(null);
     setError(null);
     setLoading(true);

@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Mutex;
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, PredefinedMenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
@@ -24,6 +24,9 @@ use url::Url;
 
 const KEYCHAIN_SERVICE: &str = "com.tokenjuice.app";
 const KEYCHAIN_ACCOUNT: &str = "claude-oauth";
+
+// Wrapper so we can manage TrayIcon separately from Settings
+struct TrayState(TrayIcon);
 
 // Debounce: prevent re-showing panel right after focus-loss hide
 static PANEL_HIDDEN_AT_MS: AtomicI64 = AtomicI64::new(0);
@@ -600,6 +603,17 @@ fn save_poll_interval(
     Ok(())
 }
 
+#[tauri::command]
+fn update_tray_title(
+    title: Option<String>,
+    state: tauri::State<'_, Mutex<TrayState>>,
+) -> Result<(), String> {
+    let tray = state.lock().unwrap();
+    tray.0
+        .set_title(title.as_deref())
+        .map_err(|e| format!("Failed to set tray title: {}", e))
+}
+
 // --- Updates ---
 
 static UPDATE_CHECK_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
@@ -985,7 +999,8 @@ pub fn run() {
             clear_token,
             get_settings,
             save_poll_interval,
-            login_oauth
+            login_oauth,
+            update_tray_title
         ])
         .setup(|app| {
             let settings = load_settings();
@@ -1018,7 +1033,7 @@ pub fn run() {
                 .build()?;
 
             // Build tray icon
-            let _tray = TrayIconBuilder::new()
+            let tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().unwrap())
                 .icon_as_template(true)
                 .menu(&tray_menu)
@@ -1089,6 +1104,8 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            app.manage(Mutex::new(TrayState(tray)));
 
             // Focus-loss handler: hide panel when it loses focus
             if let Some(window) = app.get_webview_window("main") {
