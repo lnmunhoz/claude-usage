@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
 import claudeLogo from "./assets/claude-logo.svg";
+import claudeMascot from "./assets/claude-mascot.png";
 
 // ---------------------------------------------------------------------------
 // Raw data interfaces (match Rust backend structs)
@@ -306,7 +307,7 @@ function UsageView({
     <div className="panel">
       <div className="panel-header">
         <img
-          src={claudeLogo}
+          src={claudeMascot}
           alt="Claude"
           className="panel-logo"
           draggable={false}
