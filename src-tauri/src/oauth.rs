@@ -374,3 +374,56 @@ pub(crate) async fn login_oauth_impl(app_handle: AppHandle) -> Result<(), String
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::keychain::read_keychain_oauth_blob;
+
+    #[tokio::test]
+    #[ignore] // requires real keychain credentials + network
+    async fn test_refresh_token_flow() {
+        let blob = read_keychain_oauth_blob()
+            .expect("Should read OAuth blob from keychain — did you login first?");
+
+        let refresh_token = blob
+            .refresh_token
+            .as_deref()
+            .expect("Blob should have a refresh token");
+
+        println!(
+            "Refresh token prefix: {}...",
+            &refresh_token[..20.min(refresh_token.len())]
+        );
+
+        let result = refresh_claude_token(refresh_token, &blob).await;
+
+        match &result {
+            Ok(creds) => {
+                println!("Refresh succeeded!");
+                assert!(creds.access_token.is_some(), "Should get new access token");
+                let new_token = creds.access_token.as_deref().unwrap();
+                assert!(
+                    new_token.starts_with("sk-ant-oat"),
+                    "New token format valid"
+                );
+                println!(
+                    "New token prefix: {}...",
+                    &new_token[..20.min(new_token.len())]
+                );
+
+                // Verify the keychain was updated
+                let updated_blob = read_keychain_oauth_blob()
+                    .expect("Should still be able to read keychain");
+                assert!(
+                    updated_blob.refresh_token.is_some(),
+                    "Keychain should have new refresh token (rotation)"
+                );
+                println!("New expires_at: {:?}", updated_blob.expires_at);
+            }
+            Err(e) => {
+                panic!("Token refresh failed: {}", e);
+            }
+        }
+    }
+}

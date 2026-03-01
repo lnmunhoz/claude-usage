@@ -318,3 +318,28 @@ pub(crate) async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, String>
         extra_usage_limit,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore] // requires real keychain credentials + network
+    async fn test_fetch_usage_end_to_end() {
+        let result = fetch_claude_usage_impl().await;
+
+        match &result {
+            Ok(data) => {
+                println!("Usage fetch succeeded!");
+                println!("Session: {:.1}%", data.session_percent_used);
+                println!("Weekly: {:.1}%", data.weekly_percent_used);
+                println!("Session reset: {:?}", data.session_reset);
+                println!("Weekly reset: {:?}", data.weekly_reset);
+                println!("Plan type: {:?}", data.plan_type);
+            }
+            Err(e) => {
+                panic!("Usage fetch failed: {}", e);
+            }
+        }
+    }
+}
