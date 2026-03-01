@@ -1,7 +1,9 @@
 mod models;
+mod settings;
 
 use base64::Engine;
 use models::*;
+use settings::*;
 use rand::Rng;
 use security_framework::passwords::{
     delete_generic_password, get_generic_password, set_generic_password,
@@ -38,33 +40,6 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
-}
-
-// --- Settings path ---
-
-fn settings_path() -> PathBuf {
-    let config_dir = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("claude-usage");
-    config_dir.join("settings.json")
-}
-
-fn load_settings() -> Settings {
-    let path = settings_path();
-    match fs::read_to_string(&path) {
-        Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
-        Err(_) => Settings::default(),
-    }
-}
-
-fn save_settings(settings: &Settings) {
-    let path = settings_path();
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Ok(json) = serde_json::to_string_pretty(settings) {
-        let _ = fs::write(&path, json);
-    }
 }
 
 // --- Keychain (security-framework) ---
