@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="design/icon-original.png" alt="Claude Usage" width="128" height="128" />
-</p>
-
 <h1 align="center">Claude Usage</h1>
 
 <p align="center">
@@ -16,9 +12,6 @@
 </p>
 
 ---
-
-> [!WARNING]
-> This project was **vibed into existence**. The code was largely generated through AI-assisted development. Expect rough edges, unconventional patterns, and the occasional "it works, don't touch it" moment. Use at your own risk.
 
 ## Features
 
