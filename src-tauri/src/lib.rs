@@ -1,159 +1,22 @@
-mod models;
-mod settings;
+mod commands;
 mod keychain;
+mod models;
 mod oauth;
-mod usage;
-mod updater;
+mod settings;
 mod tray;
+mod updater;
+mod usage;
 
-use models::*;
-use settings::*;
-use keychain::*;
-use oauth::*;
-use usage::*;
-use updater::*;
-use rand::Rng;
-use security_framework::passwords::{
-    delete_generic_password, get_generic_password, set_generic_password,
-};
-use serde_json::Value;
-use sha2::{Digest, Sha256};
-use std::fs;
-use std::io::{BufRead, BufReader, Write as IoWrite};
-use std::net::TcpListener;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Mutex;
-use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, PredefinedMenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_autostart::ManagerExt;
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-use tauri_plugin_opener::OpenerExt;
-use tauri_plugin_positioner::{Position, WindowExt as PositionerExt};
-use tauri_plugin_updater::UpdaterExt;
-use url::Url;
 
-fn now_ms() -> i64 {
+use settings::load_settings;
+
+pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
 }
-
-// --- Tauri Commands ---
-
-#[tauri::command]
-async fn fetch_claude_usage() -> Result<ClaudeUsageData, String> {
-    fetch_claude_usage_impl().await
-}
-
-#[tauri::command]
-async fn save_token(input: SaveTokenInput) -> Result<(), String> {
-    validate_claude_oauth_access_token(&input.access_token, "user input")?;
-    let blob = ClaudeOAuthBlob {
-        access_token: Some(input.access_token),
-        refresh_token: input.refresh_token,
-        expires_at: input.expires_at,
-        scopes: None,
-        subscription_type: None,
-        rate_limit_tier: None,
-    };
-    write_keychain_oauth_blob(&blob)
-}
-
-#[tauri::command]
-fn has_token() -> bool {
-    read_keychain_oauth_blob().is_ok()
-}
-
-#[tauri::command]
-fn clear_token() -> Result<(), String> {
-    delete_keychain_oauth_blob()
-}
-
-#[tauri::command]
-fn get_settings(state: tauri::State<'_, Mutex<Settings>>) -> Settings {
-    state.lock().unwrap().clone()
-}
-
-#[tauri::command]
-fn save_poll_interval(
-    interval_value: u64,
-    interval_unit: String,
-    app_handle: AppHandle,
-    state: tauri::State<'_, Mutex<Settings>>,
-) -> Result<(), String> {
-    let multiplier: u64 = match interval_unit.as_str() {
-        "minutes" => 60,
-        "hours" => 3600,
-        _ => 1,
-    };
-    let total_seconds = (interval_value * multiplier).max(10);
-
-    let mut settings = state.lock().unwrap();
-    settings.poll_interval_seconds = total_seconds;
-    save_settings(&settings);
-    let _ = app_handle.emit("settings-changed", settings.clone());
-    println!("[claude-usage] Poll interval changed to {}s", total_seconds);
-    Ok(())
-}
-
-#[tauri::command]
-fn update_tray_title(
-    title: Option<String>,
-    state: tauri::State<'_, Mutex<tray::TrayState>>,
-) -> Result<(), String> {
-    let tray = state.lock().unwrap();
-    tray.0
-        .set_title(title.as_deref())
-        .map_err(|e| format!("Failed to set tray title: {}", e))
-}
-
-// --- Debug / Testing Commands ---
-
-#[tauri::command]
-fn debug_token_info() -> Result<serde_json::Value, String> {
-    let blob = read_keychain_oauth_blob()?;
-    let now = now_ms();
-    Ok(serde_json::json!({
-        "has_access_token": blob.access_token.is_some(),
-        "has_refresh_token": blob.refresh_token.is_some(),
-        "expires_at": blob.expires_at,
-        "now": now,
-        "expires_in_seconds": blob.expires_at.map(|e| (e - now) / 1000),
-        "is_expired": blob.expires_at.map(|e| e <= now + 60_000),
-    }))
-}
-
-#[tauri::command]
-async fn login_oauth(app_handle: AppHandle) -> Result<(), String> {
-    login_oauth_impl(app_handle).await
-}
-
-#[tauri::command]
-async fn force_refresh_token() -> Result<serde_json::Value, String> {
-    println!("[claude-usage] Force refresh triggered...");
-    let blob = read_keychain_oauth_blob()?;
-    let refresh_token = blob
-        .refresh_token
-        .as_deref()
-        .ok_or_else(|| "No refresh token stored.".to_string())?;
-
-    let result = refresh_claude_token(refresh_token, &blob).await?;
-
-    let new_blob = read_keychain_oauth_blob()?;
-    let now = now_ms();
-    Ok(serde_json::json!({
-        "success": true,
-        "has_new_access_token": result.access_token.is_some(),
-        "has_new_refresh_token": new_blob.refresh_token.is_some(),
-        "new_expires_at": new_blob.expires_at,
-        "expires_in_seconds": new_blob.expires_at.map(|e| (e - now) / 1000),
-    }))
-}
-
-// --- Main ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -166,16 +29,16 @@ pub fn run() {
         .plugin(tauri_plugin_positioner::init())
         .manage(Mutex::new(load_settings()))
         .invoke_handler(tauri::generate_handler![
-            fetch_claude_usage,
-            save_token,
-            has_token,
-            clear_token,
-            get_settings,
-            save_poll_interval,
-            login_oauth,
-            update_tray_title,
-            debug_token_info,
-            force_refresh_token
+            commands::fetch_claude_usage,
+            commands::save_token,
+            commands::has_token,
+            commands::clear_token,
+            commands::get_settings,
+            commands::save_poll_interval,
+            commands::login_oauth,
+            commands::update_tray_title,
+            commands::debug_token_info,
+            commands::force_refresh_token
         ])
         .setup(|app| {
             tray::setup_tray(app)?;
@@ -188,6 +51,10 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use keychain::read_keychain_oauth_blob;
+    use oauth::refresh_claude_token;
+    use usage::fetch_claude_usage_impl;
 
     /// Verify we can read a stored OAuth blob from the keychain.
     /// Requires: prior login via the app.
