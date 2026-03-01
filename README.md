@@ -95,6 +95,18 @@ Builds for your current platform and architecture. The output will be in `src-ta
 | Backend  | Rust, Tauri 2               |
 | Styling  | Custom CSS with animations  |
 
+## Debug Commands
+
+You can run diagnostic commands from the browser DevTools console while the app is running in development mode (`pnpm tauri dev`):
+
+```js
+// Show token info (expiry, refresh status, rate limit tier)
+window.__TAURI_INTERNALS__.invoke('debug_token_info').then(console.log)
+
+// Force refresh the OAuth token
+window.__TAURI_INTERNALS__.invoke('force_refresh_token').then(console.log)
+```
+
 ## License
 
 MIT

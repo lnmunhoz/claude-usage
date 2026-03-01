@@ -104,7 +104,7 @@ lib.rs (run)
 - [x] Each new module file has a single clear responsibility
 - [x] `cargo build` succeeds with no warnings
 - [x] `cargo test` passes (all existing tests still compile and run)
-- [ ] `npm run tauri dev` launches the app with identical behavior
+- [x] `npm run tauri dev` launches the app with identical behavior
 - [x] No logic changes — pure file reorganization
 - [x] No new dependencies added
 
