@@ -23,7 +23,7 @@ pub(crate) fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
 
     // Build tray context menu
     let remaining_mode_item =
-        CheckMenuItemBuilder::with_id("remaining_mode", "Show Remaining (Juice Mode)")
+        CheckMenuItemBuilder::with_id("remaining_mode", "Show Remaining")
             .checked(settings.display_mode == "remaining")
             .build(app)?;
 

@@ -5,7 +5,7 @@
 <h1 align="center">Claude Usage</h1>
 
 <p align="center">
-  A sleek, always-on-top desktop widget that monitors your real-time API usage for <strong>Cursor</strong> and <strong>Claude</strong>.
+  A lightweight macOS menu bar app that monitors your Claude AI usage in real time.
 </p>
 
 <p align="center">
@@ -22,14 +22,13 @@
 
 ## Features
 
-- Real-time usage monitoring for Cursor IDE and Claude AI
+- Session (5h) and weekly (7d) usage tracking via the Claude OAuth API
 - Animated progress bars with color-coded usage levels
-- Support for multiple billing modes (Plan usage + On-demand for Cursor)
-- Separate session (5h) and weekly (7d) tracking for Claude
+- OAuth PKCE login with automatic token refresh
+- Plan detection (Pro, Max 5X/20X, Team, Enterprise)
 - Toggle between "usage" and "remaining" display modes
 - Configurable refresh intervals
-- Glassmorphic UI with shimmer and pulse animations
-- Tiny, frameless, always-on-top window
+- Menu bar tray icon with live usage percentage
 
 ## Prerequisites
 
@@ -61,6 +60,7 @@ pnpm build:mac
 ```
 
 The output will be in `src-tauri/target/aarch64-apple-darwin/release/bundle/` and includes:
+
 - `.dmg` installer
 - `.app` bundle
 
@@ -71,11 +71,13 @@ pnpm build:linux
 ```
 
 > Requires the `x86_64-unknown-linux-gnu` Rust target. Install it with:
+>
 > ```bash
 > rustup target add x86_64-unknown-linux-gnu
 > ```
 
 The output will be in `src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/` and includes:
+
 - `.deb` package
 - `.AppImage`
 
@@ -89,11 +91,11 @@ Builds for your current platform and architecture. The output will be in `src-ta
 
 ## Tech Stack
 
-| Layer    | Technology                  |
-| -------- | --------------------------- |
-| Frontend | React 19, TypeScript, Vite  |
-| Backend  | Rust, Tauri 2               |
-| Styling  | Custom CSS with animations  |
+| Layer    | Technology                 |
+| -------- | -------------------------- |
+| Frontend | React 19, TypeScript, Vite |
+| Backend  | Rust, Tauri 2              |
+| Styling  | Custom CSS with animations |
 
 ## Debug Commands
 
@@ -101,10 +103,10 @@ You can run diagnostic commands from the browser DevTools console while the app 
 
 ```js
 // Show token info (expiry, refresh status, rate limit tier)
-window.__TAURI_INTERNALS__.invoke('debug_token_info').then(console.log)
+window.__TAURI_INTERNALS__.invoke("debug_token_info").then(console.log);
 
 // Force refresh the OAuth token
-window.__TAURI_INTERNALS__.invoke('force_refresh_token').then(console.log)
+window.__TAURI_INTERNALS__.invoke("force_refresh_token").then(console.log);
 ```
 
 ## License
