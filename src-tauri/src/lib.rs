@@ -1,9 +1,11 @@
+mod models;
+
 use base64::Engine;
+use models::*;
 use rand::Rng;
 use security_framework::passwords::{
     delete_generic_password, get_generic_password, set_generic_password,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -36,135 +38,6 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
-}
-
-// --- Claude Usage Response ---
-
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ClaudeUsageData {
-    pub session_percent_used: f64,
-    pub weekly_percent_used: f64,
-    pub session_reset: Option<String>,
-    pub weekly_reset: Option<String>,
-    pub plan_type: Option<String>,
-    pub extra_usage_spend: Option<f64>,
-    pub extra_usage_limit: Option<f64>,
-}
-
-// --- Settings ---
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Settings {
-    #[serde(default = "default_display_mode")]
-    pub display_mode: String,
-    #[serde(default = "default_poll_interval")]
-    pub poll_interval_seconds: u64,
-}
-
-fn default_display_mode() -> String {
-    "remaining".to_string()
-}
-
-fn default_poll_interval() -> u64 {
-    60
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Settings {
-            display_mode: default_display_mode(),
-            poll_interval_seconds: default_poll_interval(),
-        }
-    }
-}
-
-// --- Credentials ---
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct ClaudeCredentials {
-    #[serde(rename = "accessToken", alias = "access_token")]
-    access_token: Option<String>,
-    #[serde(rename = "rateLimitTier", alias = "rate_limit_tier")]
-    rate_limit_tier: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ClaudeOAuthBlob {
-    #[serde(rename = "accessToken", alias = "access_token")]
-    access_token: Option<String>,
-    #[serde(rename = "refreshToken", alias = "refresh_token")]
-    refresh_token: Option<String>,
-    #[serde(rename = "expiresAt", alias = "expires_at")]
-    expires_at: Option<i64>,
-    scopes: Option<Vec<String>>,
-    #[serde(rename = "subscriptionType", alias = "subscription_type")]
-    subscription_type: Option<String>,
-    #[serde(rename = "rateLimitTier", alias = "rate_limit_tier")]
-    rate_limit_tier: Option<String>,
-}
-
-// --- Usage API models ---
-
-#[derive(Debug, Deserialize)]
-struct ClaudeUsageWindow {
-    utilization: Option<f64>,
-    percent_used: Option<f64>,
-    percent_left: Option<f64>,
-    used: Option<f64>,
-    limit: Option<f64>,
-    reset_at: Option<String>,
-    resets_at: Option<String>,
-    reset_time: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct ClaudeExtraUsage {
-    is_enabled: Option<bool>,
-    used_credits: Option<f64>,
-    monthly_limit: Option<f64>,
-    utilization: Option<f64>,
-    spend: Option<f64>,
-    limit: Option<f64>,
-    used: Option<f64>,
-    monthly_spend: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ClaudeOAuthUsageResponse {
-    five_hour: Option<ClaudeUsageWindow>,
-    seven_day: Option<ClaudeUsageWindow>,
-    extra_usage: Option<ClaudeExtraUsage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ClaudeProfileResponse {
-    organization: Option<ClaudeProfileOrganization>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ClaudeProfileOrganization {
-    organization_type: Option<String>,
-    rate_limit_tier: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OAuthTokenResponse {
-    access_token: Option<String>,
-    refresh_token: Option<String>,
-    expires_in: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SaveTokenInput {
-    access_token: String,
-    refresh_token: Option<String>,
-    expires_at: Option<i64>,
 }
 
 // --- Settings path ---
