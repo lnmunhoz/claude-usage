@@ -4,6 +4,11 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
+// Detect if running inside Tauri webview vs regular browser
+const isTauri = () =>
+  typeof window !== "undefined" &&
+  !!((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
+
 import claudeLogo from "./assets/claude-logo.svg";
 import claudeMascot from "./assets/claude-mascot.png";
 
@@ -273,6 +278,52 @@ function SetupView({ onSaved }: { onSaved: () => void }) {
       >
         {status === "waiting" ? "Waiting for browser..." : "Login with Claude"}
       </button>
+      {status === "waiting" && (
+        <button
+          className="panel-disconnect"
+          onClick={() => setStatus("idle")}
+        >
+          Cancel
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Skeleton loading view
+// ---------------------------------------------------------------------------
+
+function SkeletonUsageView() {
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <div className="skeleton skeleton-logo" />
+        <div className="skeleton skeleton-badge" />
+      </div>
+
+      <div className="panel-bars">
+        <div className="panel-bar-group">
+          <div className="panel-bar-label-row">
+            <div className="skeleton skeleton-text-sm" style={{ width: 100 }} />
+            <div className="skeleton skeleton-text-sm" style={{ width: 50 }} />
+          </div>
+          <div className="skeleton skeleton-bar-track" />
+          <span className="skeleton skeleton-text-xs" style={{ width: 80 }} />
+        </div>
+
+        <div className="panel-bar-group">
+          <div className="panel-bar-label-row">
+            <div className="skeleton skeleton-text-sm" style={{ width: 56 }} />
+            <div className="skeleton skeleton-text-sm" style={{ width: 50 }} />
+          </div>
+          <div className="skeleton skeleton-bar-track" />
+          <span className="skeleton skeleton-text-xs" style={{ width: 80 }} />
+        </div>
+      </div>
+
+      <div className="skeleton skeleton-button" />
+      <div className="skeleton skeleton-button" />
     </div>
   );
 }
@@ -388,7 +439,7 @@ function UsageView({
           );
         }}
       >
-        Open Claude Usage
+        Open Dashboard
       </button>
 
       <button className="panel-disconnect" onClick={onDisconnect}>
@@ -412,9 +463,15 @@ function App() {
   const [displayMode, setDisplayMode] = useState<DisplayMode>("remaining");
   const [pollIntervalSeconds, setPollIntervalSeconds] = useState(60);
   const isFirstLoad = useRef(true);
+  const [tauriAvailable] = useState(isTauri);
 
   // Check if this is the update window
   useEffect(() => {
+    if (!tauriAvailable) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const label = getCurrentWindow().label;
       if (label === "update") {
@@ -435,10 +492,12 @@ function App() {
         setLoading(false);
       }
     });
-  }, []);
+  }, [tauriAvailable]);
 
   // Load settings
   useEffect(() => {
+    if (!tauriAvailable) return;
+
     invoke<Settings>("get_settings").then((s) => {
       setDisplayMode(s.displayMode ?? "remaining");
       setPollIntervalSeconds(s.pollIntervalSeconds ?? 60);
@@ -457,7 +516,7 @@ function App() {
       unlistenSettings.then((fn) => fn());
       unlistenShowSettings.then((fn) => fn());
     };
-  }, []);
+  }, [tauriAvailable]);
 
   // Fetch usage data
   const fetchUsage = useCallback(async () => {
@@ -515,6 +574,19 @@ function App() {
   // Render
   // -------------------------------------------------------------------------
 
+  if (!tauriAvailable) {
+    return (
+      <div className="panel-error">
+        <span className="error-icon">!</span>
+        <p className="error-text">
+          This app requires the Tauri desktop runtime.
+          <br />
+          Run with <code>cargo tauri dev</code> instead of opening in a browser.
+        </p>
+      </div>
+    );
+  }
+
   if (mode === "update") {
     return <UpdateView />;
   }
@@ -531,10 +603,7 @@ function App() {
   return (
     <div className="panel-container">
       {loading ? (
-        <div className="panel-loading">
-          <div className="loading-dot" />
-          <span className="loading-text">Loading usage...</span>
-        </div>
+        <SkeletonUsageView />
       ) : error ? (
         <div className="panel-error">
           <span className="error-icon">!</span>

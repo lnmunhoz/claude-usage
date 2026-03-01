@@ -365,11 +365,11 @@ async fn refresh_claude_token(
     let client = reqwest::Client::new();
     let response = client
         .post("https://platform.claude.com/v1/oauth/token")
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(format!(
-            "grant_type=refresh_token&refresh_token={}",
-            refresh_token
-        ))
+        .json(&serde_json::json!({
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": OAUTH_CLIENT_ID,
+        }))
         .timeout(std::time::Duration::from_secs(15))
         .send()
         .await
@@ -377,7 +377,17 @@ async fn refresh_claude_token(
 
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("Claude token refresh returned HTTP {}.", status));
+        let err_body = response.text().await.unwrap_or_default();
+        println!(
+            "[claude-usage] Token refresh failed: HTTP {} — {}",
+            status,
+            &err_body[..err_body.len().min(500)]
+        );
+        return Err(format!(
+            "Token refresh failed (HTTP {}): {}",
+            status,
+            &err_body[..err_body.len().min(200)]
+        ));
     }
 
     let body = response
@@ -429,7 +439,11 @@ async fn refresh_claude_token(
         );
     }
 
-    println!("[claude-usage] Claude auth: token refresh succeeded.");
+    println!(
+        "[claude-usage] Token refreshed: new_expires_at={:?}, new_refresh={}",
+        updated_blob.expires_at,
+        updated_blob.refresh_token.is_some()
+    );
     Ok(ClaudeCredentials {
         access_token: Some(new_access_token),
         rate_limit_tier: updated_blob.rate_limit_tier,
@@ -440,6 +454,13 @@ async fn refresh_claude_token(
 
 async fn load_claude_credentials() -> Result<ClaudeCredentials, String> {
     let oauth = read_keychain_oauth_blob()?;
+
+    println!(
+        "[claude-usage] Token loaded: expires_at={:?}, has_refresh={}, now={}",
+        oauth.expires_at,
+        oauth.refresh_token.is_some(),
+        now_ms()
+    );
 
     let access_token = oauth
         .access_token
@@ -460,6 +481,10 @@ async fn load_claude_credentials() -> Result<ClaudeCredentials, String> {
                 );
             }
         }
+        println!(
+            "[claude-usage] Token still valid, expires in {}s",
+            (expires_at_ms - now) / 1000
+        );
     }
 
     Ok(ClaudeCredentials {
@@ -477,6 +502,11 @@ async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, String> {
         .as_deref()
         .ok_or_else(|| "Claude credentials are missing accessToken.".to_string())?;
 
+    println!(
+        "[claude-usage] Fetching usage with token starting with: {}...",
+        &access_token[..access_token.len().min(20)]
+    );
+
     let client = reqwest::Client::new();
     let response = client
         .get("https://api.anthropic.com/api/oauth/usage")
@@ -488,11 +518,51 @@ async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, String> {
         .await
         .map_err(|e| format!("Claude OAuth request failed: {}", e))?;
 
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read Claude OAuth response body: {}", e))?;
+    let initial_status = response.status();
+
+    // On 401, attempt token refresh and retry once before reading the body
+    let (status, body, access_token) = if initial_status == reqwest::StatusCode::UNAUTHORIZED {
+        println!("[claude-usage] Usage API returned 401, attempting token refresh and retry...");
+
+        // Discard the 401 response body
+        let _ = response.text().await;
+
+        let oauth_blob =
+            read_keychain_oauth_blob().map_err(|e| format!("Re-auth failed: {}", e))?;
+        let refresh_tok = oauth_blob
+            .refresh_token
+            .as_deref()
+            .ok_or_else(|| "No refresh token available for retry.".to_string())?;
+        let refreshed = refresh_claude_token(refresh_tok, &oauth_blob).await?;
+        let new_token = refreshed
+            .access_token
+            .as_deref()
+            .ok_or_else(|| "Refresh succeeded but no access token returned.".to_string())?
+            .to_string();
+
+        let retry_response = client
+            .get("https://api.anthropic.com/api/oauth/usage")
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", new_token))
+            .header("anthropic-beta", "oauth-2025-04-20")
+            .timeout(std::time::Duration::from_secs(15))
+            .send()
+            .await
+            .map_err(|e| format!("Retry request failed: {}", e))?;
+
+        let retry_status = retry_response.status();
+        let retry_body = retry_response
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read retry response: {}", e))?;
+        (retry_status, retry_body, new_token)
+    } else {
+        let body = response
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read Claude OAuth response body: {}", e))?;
+        (initial_status, body, access_token.to_string())
+    };
 
     if !status.is_success() {
         println!(
@@ -676,6 +746,44 @@ fn update_tray_title(
     tray.0
         .set_title(title.as_deref())
         .map_err(|e| format!("Failed to set tray title: {}", e))
+}
+
+// --- Debug / Testing Commands ---
+
+#[tauri::command]
+fn debug_token_info() -> Result<serde_json::Value, String> {
+    let blob = read_keychain_oauth_blob()?;
+    let now = now_ms();
+    Ok(serde_json::json!({
+        "has_access_token": blob.access_token.is_some(),
+        "has_refresh_token": blob.refresh_token.is_some(),
+        "expires_at": blob.expires_at,
+        "now": now,
+        "expires_in_seconds": blob.expires_at.map(|e| (e - now) / 1000),
+        "is_expired": blob.expires_at.map(|e| e <= now + 60_000),
+    }))
+}
+
+#[tauri::command]
+async fn force_refresh_token() -> Result<serde_json::Value, String> {
+    println!("[claude-usage] Force refresh triggered...");
+    let blob = read_keychain_oauth_blob()?;
+    let refresh_token = blob
+        .refresh_token
+        .as_deref()
+        .ok_or_else(|| "No refresh token stored.".to_string())?;
+
+    let result = refresh_claude_token(refresh_token, &blob).await?;
+
+    let new_blob = read_keychain_oauth_blob()?;
+    let now = now_ms();
+    Ok(serde_json::json!({
+        "success": true,
+        "has_new_access_token": result.access_token.is_some(),
+        "has_new_refresh_token": new_blob.refresh_token.is_some(),
+        "new_expires_at": new_blob.expires_at,
+        "expires_in_seconds": new_blob.expires_at.map(|e| (e - now) / 1000),
+    }))
 }
 
 // --- Updates ---
@@ -1074,7 +1182,9 @@ pub fn run() {
             get_settings,
             save_poll_interval,
             login_oauth,
-            update_tray_title
+            update_tray_title,
+            debug_token_info,
+            force_refresh_token
         ])
         .setup(|app| {
             let settings = load_settings();
@@ -1205,4 +1315,158 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify we can read a stored OAuth blob from the keychain.
+    /// Requires: prior login via the app.
+    #[test]
+    #[ignore] // requires real keychain credentials
+    fn test_read_keychain_blob() {
+        let blob = read_keychain_oauth_blob()
+            .expect("Should read OAuth blob from keychain — did you login first?");
+
+        assert!(blob.access_token.is_some(), "Blob should have access_token");
+        assert!(
+            blob.refresh_token.is_some(),
+            "Blob should have refresh_token"
+        );
+        assert!(blob.expires_at.is_some(), "Blob should have expires_at");
+
+        let token = blob.access_token.as_deref().unwrap();
+        assert!(
+            token.starts_with("sk-ant-oat"),
+            "Access token should start with sk-ant-oat"
+        );
+
+        println!(
+            "Access token prefix: {}...",
+            &token[..20.min(token.len())]
+        );
+        println!("Has refresh token: {}", blob.refresh_token.is_some());
+        println!("Expires at: {:?}", blob.expires_at);
+        println!(
+            "Expires in: {}s",
+            (blob.expires_at.unwrap() - now_ms()) / 1000
+        );
+    }
+
+    /// Test the full token refresh flow against the real API.
+    /// Requires: prior login with a valid refresh token.
+    #[tokio::test]
+    #[ignore] // requires real keychain credentials + network
+    async fn test_refresh_token_flow() {
+        let blob = read_keychain_oauth_blob()
+            .expect("Should read OAuth blob from keychain — did you login first?");
+
+        let refresh_token = blob
+            .refresh_token
+            .as_deref()
+            .expect("Blob should have a refresh token");
+
+        println!(
+            "Refresh token prefix: {}...",
+            &refresh_token[..20.min(refresh_token.len())]
+        );
+
+        let result = refresh_claude_token(refresh_token, &blob).await;
+
+        match &result {
+            Ok(creds) => {
+                println!("Refresh succeeded!");
+                assert!(creds.access_token.is_some(), "Should get new access token");
+                let new_token = creds.access_token.as_deref().unwrap();
+                assert!(
+                    new_token.starts_with("sk-ant-oat"),
+                    "New token format valid"
+                );
+                println!(
+                    "New token prefix: {}...",
+                    &new_token[..20.min(new_token.len())]
+                );
+
+                // Verify the keychain was updated
+                let updated_blob = read_keychain_oauth_blob()
+                    .expect("Should still be able to read keychain");
+                assert!(
+                    updated_blob.refresh_token.is_some(),
+                    "Keychain should have new refresh token (rotation)"
+                );
+                println!("New expires_at: {:?}", updated_blob.expires_at);
+            }
+            Err(e) => {
+                panic!("Token refresh failed: {}", e);
+            }
+        }
+    }
+
+    /// Test that a refreshed token works for the usage API.
+    /// Requires: prior login + network.
+    #[tokio::test]
+    #[ignore] // requires real keychain credentials + network
+    async fn test_refreshed_token_fetches_usage() {
+        // First refresh the token to ensure we have a fresh one
+        let blob = read_keychain_oauth_blob().expect("Should read OAuth blob from keychain");
+        let refresh_token = blob
+            .refresh_token
+            .as_deref()
+            .expect("Blob should have a refresh token");
+
+        let creds = refresh_claude_token(refresh_token, &blob)
+            .await
+            .expect("Refresh should succeed");
+        let access_token = creds
+            .access_token
+            .as_deref()
+            .expect("Should have new access token");
+
+        // Now use the refreshed token to fetch usage
+        let client = reqwest::Client::new();
+        let response = client
+            .get("https://api.anthropic.com/api/oauth/usage")
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("anthropic-beta", "oauth-2025-04-20")
+            .timeout(std::time::Duration::from_secs(15))
+            .send()
+            .await
+            .expect("Usage API request should succeed");
+
+        let status = response.status();
+        let body = response.text().await.expect("Should read response body");
+
+        println!("Usage API status: {}", status);
+        println!("Usage API body: {}", &body[..body.len().min(500)]);
+
+        assert!(
+            status.is_success(),
+            "Usage API should return 200 with refreshed token, got {}: {}",
+            status,
+            &body[..body.len().min(200)]
+        );
+    }
+
+    /// Test that the full fetch_claude_usage_impl works end-to-end.
+    #[tokio::test]
+    #[ignore] // requires real keychain credentials + network
+    async fn test_fetch_usage_end_to_end() {
+        let result = fetch_claude_usage_impl().await;
+
+        match &result {
+            Ok(data) => {
+                println!("Usage fetch succeeded!");
+                println!("Session: {:.1}%", data.session_percent_used);
+                println!("Weekly: {:.1}%", data.weekly_percent_used);
+                println!("Session reset: {:?}", data.session_reset);
+                println!("Weekly reset: {:?}", data.weekly_reset);
+                println!("Plan type: {:?}", data.plan_type);
+            }
+            Err(e) => {
+                panic!("Usage fetch failed: {}", e);
+            }
+        }
+    }
 }
