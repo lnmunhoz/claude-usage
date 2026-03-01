@@ -1,9 +1,11 @@
 mod models;
 mod settings;
+mod keychain;
 
 use base64::Engine;
 use models::*;
 use settings::*;
+use keychain::*;
 use rand::Rng;
 use security_framework::passwords::{
     delete_generic_password, get_generic_password, set_generic_password,
@@ -26,9 +28,6 @@ use tauri_plugin_positioner::{Position, WindowExt as PositionerExt};
 use tauri_plugin_updater::UpdaterExt;
 use url::Url;
 
-const KEYCHAIN_SERVICE: &str = "app.claudeusage.desktop";
-const KEYCHAIN_ACCOUNT: &str = "claude-oauth";
-
 // Wrapper so we can manage TrayIcon separately from Settings
 struct TrayState(TrayIcon);
 
@@ -40,35 +39,6 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
-}
-
-// --- Keychain (security-framework) ---
-
-fn read_keychain_oauth_blob() -> Result<ClaudeOAuthBlob, String> {
-    let data = get_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        .map_err(|e| format!("Keychain lookup failed: {}", e))?;
-    let json = String::from_utf8(data.to_vec())
-        .map_err(|_| "Keychain data was not valid UTF-8.".to_string())?;
-    serde_json::from_str(&json).map_err(|e| format!("Failed to parse keychain JSON: {}", e))
-}
-
-fn write_keychain_oauth_blob(blob: &ClaudeOAuthBlob) -> Result<(), String> {
-    let json = serde_json::to_string(blob)
-        .map_err(|e| format!("Failed to serialize: {}", e))?;
-    set_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, json.as_bytes())
-        .map_err(|e| format!("Failed to write keychain: {}", e))
-}
-
-// --- Token validation ---
-
-fn validate_claude_oauth_access_token(access_token: &str, source: &str) -> Result<(), String> {
-    if access_token.starts_with("sk-ant-oat") {
-        return Ok(());
-    }
-    Err(format!(
-        "Claude OAuth token from {} is not an OAuth access token.",
-        source
-    ))
 }
 
 fn plan_display_from_profile(org: &ClaudeProfileOrganization) -> Option<String> {
@@ -554,8 +524,7 @@ fn has_token() -> bool {
 
 #[tauri::command]
 fn clear_token() -> Result<(), String> {
-    delete_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        .map_err(|e| format!("Failed to clear token: {}", e))
+    delete_keychain_oauth_blob()
 }
 
 #[tauri::command]
