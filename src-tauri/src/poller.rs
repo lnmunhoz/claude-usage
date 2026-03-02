@@ -5,6 +5,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::watch;
 use tokio::time::{self, MissedTickBehavior};
 
+use tauri::async_runtime;
+
 use crate::models::{ClaudeUsageData, Settings};
 use crate::tray::TrayState;
 use crate::usage::fetch_claude_usage_impl;
@@ -32,7 +34,7 @@ const MAX_BACKOFF_SECS: u64 = 900; // 15 minutes
 pub(crate) fn start_poller(app_handle: AppHandle, initial_interval_secs: u64) -> PollerHandle {
     let (tx, mut rx) = watch::channel(Some(initial_interval_secs));
 
-    tokio::spawn(async move {
+    async_runtime::spawn(async move {
         println!(
             "[claude-usage] Poller started with interval {}s",
             initial_interval_secs
