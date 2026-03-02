@@ -9,6 +9,7 @@ use crate::keychain::{
 use crate::models::{ClaudeOAuthBlob, ClaudeUsageData, SaveTokenInput, Settings};
 use crate::now_ms;
 use crate::oauth::{login_oauth_impl, refresh_claude_token};
+use crate::poller::{self, PollerHandle};
 use crate::settings::save_settings;
 use crate::tray::TrayState;
 use crate::usage::fetch_claude_usage_impl;
@@ -38,7 +39,13 @@ pub(crate) fn has_token() -> bool {
 }
 
 #[tauri::command]
-pub(crate) fn clear_token() -> Result<(), String> {
+pub(crate) fn clear_token(
+    poller_state: tauri::State<'_, Mutex<Option<PollerHandle>>>,
+) -> Result<(), String> {
+    // Stop the background poller before clearing credentials
+    if let Some(handle) = poller_state.lock().unwrap().take() {
+        handle.stop();
+    }
     delete_keychain_oauth_blob()
 }
 
@@ -53,6 +60,7 @@ pub(crate) fn save_poll_interval(
     interval_unit: String,
     app_handle: AppHandle,
     state: tauri::State<'_, Mutex<Settings>>,
+    poller_state: tauri::State<'_, Mutex<Option<PollerHandle>>>,
 ) -> Result<(), String> {
     let multiplier: u64 = match interval_unit.as_str() {
         "minutes" => 60,
@@ -65,6 +73,12 @@ pub(crate) fn save_poll_interval(
     settings.poll_interval_seconds = total_seconds;
     save_settings(&settings);
     let _ = app_handle.emit("settings-changed", settings.clone());
+
+    // Notify the background poller of the new interval
+    if let Some(ref handle) = *poller_state.lock().unwrap() {
+        handle.update_interval(total_seconds);
+    }
+
     println!("[claude-usage] Poll interval changed to {}s", total_seconds);
     Ok(())
 }
@@ -95,8 +109,19 @@ pub(crate) fn debug_token_info() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub(crate) async fn login_oauth(app_handle: AppHandle) -> Result<(), String> {
-    login_oauth_impl(app_handle).await
+pub(crate) async fn login_oauth(
+    app_handle: AppHandle,
+    state: tauri::State<'_, Mutex<Settings>>,
+    poller_state: tauri::State<'_, Mutex<Option<PollerHandle>>>,
+) -> Result<(), String> {
+    login_oauth_impl(app_handle.clone()).await?;
+
+    // Start the background poller now that we have credentials
+    let interval = state.lock().unwrap().poll_interval_seconds;
+    let handle = poller::start_poller(app_handle, interval);
+    *poller_state.lock().unwrap() = Some(handle);
+
+    Ok(())
 }
 
 #[tauri::command]

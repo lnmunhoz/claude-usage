@@ -2,12 +2,15 @@ mod commands;
 mod keychain;
 mod models;
 mod oauth;
+mod poller;
 mod settings;
 mod tray;
 mod updater;
 mod usage;
 
 use std::sync::Mutex;
+
+use tauri::Manager;
 
 use settings::load_settings;
 
@@ -28,6 +31,7 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_positioner::init())
         .manage(Mutex::new(load_settings()))
+        .manage(Mutex::new(None::<poller::PollerHandle>))
         .invoke_handler(tauri::generate_handler![
             commands::fetch_claude_usage,
             commands::save_token,
@@ -42,6 +46,16 @@ pub fn run() {
         ])
         .setup(|app| {
             tray::setup_tray(app)?;
+
+            // Start background polling if user already has a token
+            if keychain::read_keychain_oauth_blob().is_ok() {
+                let settings = app.state::<Mutex<models::Settings>>();
+                let interval = settings.lock().unwrap().poll_interval_seconds;
+                let handle = poller::start_poller(app.handle().clone(), interval);
+                let poller_state = app.state::<Mutex<Option<poller::PollerHandle>>>();
+                *poller_state.lock().unwrap() = Some(handle);
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())
