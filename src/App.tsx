@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -453,15 +453,16 @@ function UsageView({
 // App component
 // ---------------------------------------------------------------------------
 
-type AppMode = "setup" | "usage" | "settings" | "update";
+type AppMode = "loading" | "setup" | "usage" | "settings" | "update";
 
 function App() {
-  const [mode, setMode] = useState<AppMode>("setup");
+  const [mode, setMode] = useState<AppMode>("loading");
   const [claudeUsage, setClaudeUsage] = useState<ClaudeUsageData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("remaining");
   const [tauriAvailable] = useState(isTauri);
+  const hasReceivedDataRef = useRef(false);
 
   // Check if this is the update window
   useEffect(() => {
@@ -518,8 +519,26 @@ function App() {
   useEffect(() => {
     if (mode !== "usage" || !tauriAvailable) return;
 
+    // Immediate fetch — the backend poller's initial event may have
+    // fired before this listener was set up (race condition on startup).
+    invoke<ClaudeUsageData>("fetch_claude_usage")
+      .then((data) => {
+        setClaudeUsage(data);
+        hasReceivedDataRef.current = true;
+        setError(null);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("initial usage fetch error:", err);
+        if (!hasReceivedDataRef.current) {
+          setError(String(err));
+          setLoading(false);
+        }
+      });
+
     const unlistenUsage = listen<ClaudeUsageData>("usage-updated", (event) => {
       setClaudeUsage(event.payload);
+      hasReceivedDataRef.current = true;
       setError(null);
       setLoading(false);
     });
@@ -527,17 +546,18 @@ function App() {
     const unlistenError = listen<{ message: string }>("usage-error", (event) => {
       console.error("usage poll error:", event.payload.message);
       // Only show error if we have no data yet (don't replace good data with error)
-      if (!claudeUsage) {
+      if (!hasReceivedDataRef.current) {
         setError(event.payload.message);
         setLoading(false);
       }
     });
 
     return () => {
+      hasReceivedDataRef.current = false;
       unlistenUsage.then((fn) => fn());
       unlistenError.then((fn) => fn());
     };
-  }, [mode, tauriAvailable, claudeUsage]);
+  }, [mode, tauriAvailable]);
 
   // Manual retry for error state
   const fetchUsage = useCallback(async () => {
@@ -594,6 +614,10 @@ function App() {
 
   if (mode === "update") {
     return <UpdateView />;
+  }
+
+  if (mode === "loading") {
+    return <SkeletonUsageView />;
   }
 
   if (mode === "setup") {
