@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -461,8 +461,6 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("remaining");
-  const [pollIntervalSeconds, setPollIntervalSeconds] = useState(60);
-  const isFirstLoad = useRef(true);
   const [tauriAvailable] = useState(isTauri);
 
   // Check if this is the update window
@@ -500,12 +498,10 @@ function App() {
 
     invoke<Settings>("get_settings").then((s) => {
       setDisplayMode(s.displayMode ?? "remaining");
-      setPollIntervalSeconds(s.pollIntervalSeconds ?? 60);
     });
 
     const unlistenSettings = listen<Settings>("settings-changed", (event) => {
       setDisplayMode(event.payload.displayMode ?? "remaining");
-      setPollIntervalSeconds(event.payload.pollIntervalSeconds ?? 60);
     });
 
     const unlistenShowSettings = listen("show-settings", () => {
@@ -518,19 +514,39 @@ function App() {
     };
   }, [tauriAvailable]);
 
-  // Fetch usage data
+  // Listen for usage data from the backend poller
+  useEffect(() => {
+    if (mode !== "usage" || !tauriAvailable) return;
+
+    const unlistenUsage = listen<ClaudeUsageData>("usage-updated", (event) => {
+      setClaudeUsage(event.payload);
+      setError(null);
+      setLoading(false);
+    });
+
+    const unlistenError = listen<{ message: string }>("usage-error", (event) => {
+      console.error("usage poll error:", event.payload.message);
+      // Only show error if we have no data yet (don't replace good data with error)
+      if (!claudeUsage) {
+        setError(event.payload.message);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      unlistenUsage.then((fn) => fn());
+      unlistenError.then((fn) => fn());
+    };
+  }, [mode, tauriAvailable, claudeUsage]);
+
+  // Manual retry for error state
   const fetchUsage = useCallback(async () => {
     if (mode !== "usage") return;
+    setLoading(true);
     try {
       const data = await invoke<ClaudeUsageData>("fetch_claude_usage");
       setClaudeUsage(data);
       setError(null);
-      if (isFirstLoad.current) {
-        isFirstLoad.current = false;
-      }
-      // Update menu bar tray text with session percentage left
-      const pctLeft = (100 - data.sessionPercentUsed).toFixed(0);
-      await invoke("update_tray_title", { title: `${pctLeft}%` });
     } catch (err) {
       console.error("usage fetch error:", err);
       setError(String(err));
@@ -539,17 +555,10 @@ function App() {
     }
   }, [mode]);
 
-  useEffect(() => {
-    if (mode !== "usage") return;
-    setLoading(true);
-    fetchUsage();
-    const interval = setInterval(fetchUsage, pollIntervalSeconds * 1000);
-    return () => clearInterval(interval);
-  }, [fetchUsage, pollIntervalSeconds, mode]);
-
   // Handle disconnect
   const handleDisconnect = async () => {
     try {
+      // clear_token also stops the backend poller and clears the tray title
       await invoke("clear_token");
     } catch {
       // ignore
@@ -557,17 +566,13 @@ function App() {
     await invoke("update_tray_title", { title: null }).catch(() => {});
     setClaudeUsage(null);
     setError(null);
-    setLoading(true);
-    isFirstLoad.current = true;
     setMode("setup");
-    setLoading(false);
   };
 
-  // Handle token saved
+  // Handle token saved (login_oauth starts the backend poller automatically)
   const handleTokenSaved = () => {
     setMode("usage");
     setLoading(true);
-    isFirstLoad.current = true;
   };
 
   // -------------------------------------------------------------------------
