@@ -116,6 +116,11 @@ pub(crate) async fn login_oauth(
 ) -> Result<(), String> {
     login_oauth_impl(app_handle.clone()).await?;
 
+    // Stop any existing poller before starting a new one
+    if let Some(old_handle) = poller_state.lock().unwrap().take() {
+        old_handle.stop();
+    }
+
     // Start the background poller now that we have credentials
     let interval = state.lock().unwrap().poll_interval_seconds;
     let handle = poller::start_poller(app_handle, interval);
