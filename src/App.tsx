@@ -137,12 +137,12 @@ function App() {
   // Handle disconnect
   const handleDisconnect = async () => {
     try {
-      // clear_token also stops the backend poller and clears the tray title
+      // clear_token also stops the backend poller
       await invoke("clear_token");
     } catch {
       // ignore
     }
-    await invoke("update_tray_title", { title: null }).catch(() => {});
+    await invoke("update_tray_title", { title: "-" }).catch(() => {});
     setClaudeUsage(null);
     setError(null);
     setMode("setup");
