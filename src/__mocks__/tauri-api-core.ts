@@ -15,6 +15,7 @@ const defaultHandler: InvokeHandler = (cmd) => {
         planType: "Pro",
         extraUsageSpend: null,
         extraUsageLimit: null,
+        lastUpdated: Date.now(),
       };
     case "save_poll_interval":
     case "clear_token":

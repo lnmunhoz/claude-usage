@@ -9,6 +9,7 @@ import {
   computeFill,
   formatResetTime,
   formatWeeklyResetTime,
+  formatLastUpdated,
 } from "../utils";
 
 interface UsageViewProps {
@@ -99,6 +100,12 @@ export function UsageView({ data, displayMode, onDisconnect }: UsageViewProps) {
               )}
             </span>
           </div>
+        )}
+
+        {formatLastUpdated(data.lastUpdated) && (
+          <p className="panel-last-updated">
+            Updated at {formatLastUpdated(data.lastUpdated)}
+          </p>
         )}
       </div>
 

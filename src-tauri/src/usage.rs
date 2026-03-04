@@ -308,6 +308,11 @@ pub(crate) async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, String>
         _ => None,
     };
 
+    let last_updated = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_millis() as u64);
+
     Ok(ClaudeUsageData {
         session_percent_used: clamp_percent(session_percent_used),
         weekly_percent_used: clamp_percent(weekly_percent_used),
@@ -316,6 +321,7 @@ pub(crate) async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, String>
         plan_type,
         extra_usage_spend,
         extra_usage_limit,
+        last_updated,
     })
 }
 

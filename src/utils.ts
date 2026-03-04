@@ -51,6 +51,20 @@ export function formatResetTime(isoString: string | null): string | null {
   }
 }
 
+export function formatLastUpdated(timestamp: number | null): string | null {
+  if (!timestamp) return null;
+  try {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function formatWeeklyResetTime(isoString: string | null): string | null {
   if (!isoString) return null;
   try {
