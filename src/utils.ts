@@ -50,3 +50,19 @@ export function formatResetTime(isoString: string | null): string | null {
     return null;
   }
 }
+
+export function formatWeeklyResetTime(isoString: string | null): string | null {
+  if (!isoString) return null;
+  try {
+    const resetDate = new Date(isoString);
+    const day = resetDate.toLocaleDateString(undefined, { weekday: "short" });
+    const time = resetDate.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+    return `${day} ${time}`;
+  } catch {
+    return null;
+  }
+}
