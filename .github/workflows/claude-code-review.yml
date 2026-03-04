@@ -12,7 +12,7 @@ on:
 
 jobs:
   claude-review:
-    if: github.event.pull_request.user.login == 'lnmunhoz'
+    if: github.event.pull_request.user.login == 'lnmunhoz' && !contains(github.actor, '[bot]')
 
     runs-on: ubuntu-latest
     permissions:
