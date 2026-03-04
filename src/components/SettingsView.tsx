@@ -9,20 +9,25 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    invoke<Settings>("get_settings").then((s) => {
-      const totalSeconds = s.pollIntervalSeconds ?? 60;
-      if (totalSeconds >= 3600 && totalSeconds % 3600 === 0) {
-        setValue(totalSeconds / 3600);
-        setUnit("hours");
-      } else if (totalSeconds >= 60 && totalSeconds % 60 === 0) {
-        setValue(totalSeconds / 60);
-        setUnit("minutes");
-      } else {
-        setValue(totalSeconds);
-        setUnit("seconds");
-      }
-      setLoaded(true);
-    });
+    invoke<Settings>("get_settings")
+      .then((s) => {
+        const totalSeconds = s.pollIntervalSeconds ?? 60;
+        if (totalSeconds >= 3600 && totalSeconds % 3600 === 0) {
+          setValue(totalSeconds / 3600);
+          setUnit("hours");
+        } else if (totalSeconds >= 60 && totalSeconds % 60 === 0) {
+          setValue(totalSeconds / 60);
+          setUnit("minutes");
+        } else {
+          setValue(totalSeconds);
+          setUnit("seconds");
+        }
+        setLoaded(true);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to load settings");
+        setLoaded(true);
+      });
   }, []);
 
   const handleSave = async () => {
