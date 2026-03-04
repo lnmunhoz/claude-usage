@@ -514,6 +514,10 @@ body,
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .setup-save:hover:not(:disabled) {
