@@ -8,6 +8,7 @@ import {
   getWeeklyGlow,
   computeFill,
   formatResetTime,
+  formatWeeklyResetTime,
 } from "../utils";
 
 interface UsageViewProps {
@@ -23,9 +24,10 @@ interface UsageBarProps {
   glow: string;
   displayMode: DisplayMode;
   reset: string | null;
+  resetPrefix?: string;
 }
 
-function UsageBar({ label, fill, color, glow, displayMode, reset }: UsageBarProps) {
+function UsageBar({ label, fill, color, glow, displayMode, reset, resetPrefix = "in " }: UsageBarProps) {
   return (
     <div className="panel-bar-group">
       <div className="panel-bar-label-row">
@@ -44,7 +46,7 @@ function UsageBar({ label, fill, color, glow, displayMode, reset }: UsageBarProp
           }}
         />
       </div>
-      {reset && <span className="panel-bar-reset">Resets in {reset}</span>}
+      {reset && <span className="panel-bar-reset">Resets {resetPrefix}{reset}</span>}
     </div>
   );
 }
@@ -83,7 +85,8 @@ export function UsageView({ data, displayMode, onDisconnect }: UsageViewProps) {
           color={getWeeklyColor(weeklyPercent)}
           glow={getWeeklyGlow(weeklyPercent)}
           displayMode={displayMode}
-          reset={formatResetTime(data.weeklyReset)}
+          reset={formatWeeklyResetTime(data.weeklyReset)}
+          resetPrefix=""
         />
 
         {data.extraUsageSpend != null && (
