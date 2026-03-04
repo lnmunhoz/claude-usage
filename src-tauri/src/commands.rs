@@ -41,11 +41,14 @@ pub(crate) fn has_token() -> bool {
 #[tauri::command]
 pub(crate) fn clear_token(
     poller_state: tauri::State<'_, Mutex<Option<PollerHandle>>>,
+    tray_state: tauri::State<'_, Mutex<TrayState>>,
 ) -> Result<(), String> {
     // Stop the background poller before clearing credentials
     if let Some(handle) = poller_state.lock().unwrap().take() {
         handle.stop();
     }
+    // Reset tray title to "-" to indicate disconnected state
+    let _ = tray_state.lock().unwrap().0.set_title(Some("-"));
     delete_keychain_oauth_blob()
 }
 
