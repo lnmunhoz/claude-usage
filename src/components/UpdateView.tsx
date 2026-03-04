@@ -11,7 +11,7 @@ export function UpdateView() {
     const unlisten = listen<UpdateInfo>("update-info", (event) => {
       setInfo(event.payload);
     });
-    getCurrentWindow().emit("update-ready", {});
+    getCurrentWindow().emit("update-ready", {}).catch(() => {});
     return () => {
       unlisten.then((fn) => fn());
     };

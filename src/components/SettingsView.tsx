@@ -6,6 +6,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
   const [value, setValue] = useState(60);
   const [unit, setUnit] = useState<"seconds" | "minutes" | "hours">("seconds");
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<Settings>("get_settings").then((s) => {
@@ -25,11 +26,15 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
   }, []);
 
   const handleSave = async () => {
-    await invoke("save_poll_interval", {
-      intervalValue: value,
-      intervalUnit: unit,
-    });
-    onBack();
+    try {
+      await invoke("save_poll_interval", {
+        intervalValue: value,
+        intervalUnit: unit,
+      });
+      onBack();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save settings");
+    }
   };
 
   if (!loaded) return null;
@@ -43,7 +48,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
           min={1}
           className="settings-input"
           value={value}
-          onChange={(e) => setValue(Math.max(1, parseInt(e.target.value) || 1))}
+          onChange={(e) => setValue(Math.max(1, parseInt(e.target.value, 10) || 1))}
         />
         <select
           className="settings-select"
@@ -57,6 +62,7 @@ export function SettingsView({ onBack }: { onBack: () => void }) {
           <option value="hours">hours</option>
         </select>
       </div>
+      {error && <p className="settings-error">{error}</p>}
       <button className="settings-save" onClick={handleSave}>
         Save
       </button>

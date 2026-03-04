@@ -49,7 +49,7 @@ export function UsageView({ data, displayMode, onDisconnect }: UsageViewProps) {
           <div className="panel-bar-label-row">
             <span className="panel-bar-name">5-Hour Session</span>
             <span className="panel-bar-pct">
-              {parseFloat(sessionFill.toFixed(1))}%{" "}
+              {sessionFill.toFixed(1)}%{" "}
               {displayMode === "remaining" ? "left" : "used"}
             </span>
           </div>
@@ -73,7 +73,7 @@ export function UsageView({ data, displayMode, onDisconnect }: UsageViewProps) {
           <div className="panel-bar-label-row">
             <span className="panel-bar-name">Weekly</span>
             <span className="panel-bar-pct">
-              {parseFloat(weeklyFill.toFixed(1))}%{" "}
+              {weeklyFill.toFixed(1)}%{" "}
               {displayMode === "remaining" ? "left" : "used"}
             </span>
           </div>
