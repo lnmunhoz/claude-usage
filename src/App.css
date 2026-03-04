@@ -231,6 +231,14 @@ body,
   color: rgba(255, 255, 255, 0.85);
 }
 
+.panel-last-updated {
+  margin: 0;
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+}
+
 /* ---------------------------------------------------------------------------
    Open usage link button
 --------------------------------------------------------------------------- */

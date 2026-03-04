@@ -6,6 +6,7 @@ export interface ClaudeUsageData {
   planType: string | null;
   extraUsageSpend: number | null;
   extraUsageLimit: number | null;
+  lastUpdated: number | null;
 }
 
 export type DisplayMode = "usage" | "remaining";

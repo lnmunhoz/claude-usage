@@ -12,6 +12,7 @@ pub struct ClaudeUsageData {
     pub plan_type: Option<String>,
     pub extra_usage_spend: Option<f64>,
     pub extra_usage_limit: Option<f64>,
+    pub last_updated: Option<u64>,
 }
 
 // --- Settings ---

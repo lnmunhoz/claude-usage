@@ -16,6 +16,7 @@ const baseData: ClaudeUsageData = {
   planType: "Pro",
   extraUsageSpend: null,
   extraUsageLimit: null,
+  lastUpdated: Date.now(),
 };
 
 const meta: Meta<typeof UsageView> = {
