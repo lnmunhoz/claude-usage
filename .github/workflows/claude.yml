@@ -46,7 +46,5 @@ jobs:
           additional_permissions: |
             actions: read
 
-          # Optional: Add claude_args to customize behavior and configuration
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
-          # claude_args: '--allowed-tools Bash(gh pr:*)'
+          # Allow Claude to create PRs when working on issues
+          claude_args: '--allowedTools "Bash(gh pr create:*),Bash(gh pr edit:*)"'
