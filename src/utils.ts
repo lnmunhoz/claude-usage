@@ -1,32 +1,31 @@
 import type { DisplayMode } from "./types";
 
-export function getSessionColor(p: number) {
-  if (p < 50) return "#facc15";
-  if (p < 75) return "#eab308";
-  if (p < 90) return "#f97316";
-  return "#ef4444";
+export const isTauri = () =>
+  typeof window !== "undefined" &&
+  !!((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
+
+const THRESHOLD_LOW = 50;
+const THRESHOLD_MED = 75;
+const THRESHOLD_HIGH = 90;
+
+function pick<T>(p: number, low: T, med: T, high: T, max: T): T {
+  if (p < THRESHOLD_LOW) return low;
+  if (p < THRESHOLD_MED) return med;
+  if (p < THRESHOLD_HIGH) return high;
+  return max;
 }
 
-export function getSessionGlow(p: number) {
-  if (p < 50) return "rgba(250, 204, 21, 0.5)";
-  if (p < 75) return "rgba(234, 179, 8, 0.5)";
-  if (p < 90) return "rgba(249, 115, 22, 0.5)";
-  return "rgba(239, 68, 68, 0.5)";
-}
+export const getSessionColor = (p: number) =>
+  pick(p, "#facc15", "#eab308", "#f97316", "#ef4444");
 
-export function getWeeklyColor(p: number) {
-  if (p < 50) return "#f97316";
-  if (p < 75) return "#ea580c";
-  if (p < 90) return "#ef4444";
-  return "#dc2626";
-}
+export const getSessionGlow = (p: number) =>
+  pick(p, "rgba(250, 204, 21, 0.5)", "rgba(234, 179, 8, 0.5)", "rgba(249, 115, 22, 0.5)", "rgba(239, 68, 68, 0.5)");
 
-export function getWeeklyGlow(p: number) {
-  if (p < 50) return "rgba(249, 115, 22, 0.5)";
-  if (p < 75) return "rgba(234, 88, 12, 0.5)";
-  if (p < 90) return "rgba(239, 68, 68, 0.5)";
-  return "rgba(220, 38, 38, 0.5)";
-}
+export const getWeeklyColor = (p: number) =>
+  pick(p, "#f97316", "#ea580c", "#ef4444", "#dc2626");
+
+export const getWeeklyGlow = (p: number) =>
+  pick(p, "rgba(249, 115, 22, 0.5)", "rgba(234, 88, 12, 0.5)", "rgba(239, 68, 68, 0.5)", "rgba(220, 38, 38, 0.5)");
 
 export function clampFill(p: number) {
   return Math.min(100, Math.max(0, p));

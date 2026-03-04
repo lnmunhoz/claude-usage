@@ -1,35 +1,57 @@
+import { openUrl } from "@tauri-apps/plugin-opener";
+import claudeMascot from "../assets/claude-mascot.png";
 import type { ClaudeUsageData, DisplayMode } from "../types";
 import {
-  computeFill,
-  formatResetTime,
   getSessionColor,
   getSessionGlow,
   getWeeklyColor,
   getWeeklyGlow,
+  computeFill,
+  formatResetTime,
 } from "../utils";
-import claudeMascot from "../assets/claude-mascot.png";
 
-export function UsageView({
-  data,
-  displayMode,
-  onDisconnect,
-}: {
+interface UsageViewProps {
   data: ClaudeUsageData;
   displayMode: DisplayMode;
   onDisconnect: () => void;
-}) {
+}
+
+interface UsageBarProps {
+  label: string;
+  fill: number;
+  color: string;
+  glow: string;
+  displayMode: DisplayMode;
+  reset: string | null;
+}
+
+function UsageBar({ label, fill, color, glow, displayMode, reset }: UsageBarProps) {
+  return (
+    <div className="panel-bar-group">
+      <div className="panel-bar-label-row">
+        <span className="panel-bar-name">{label}</span>
+        <span className="panel-bar-pct">
+          {fill.toFixed(1)}% {displayMode === "remaining" ? "left" : "used"}
+        </span>
+      </div>
+      <div className="panel-bar-track">
+        <div
+          className="panel-bar-fill"
+          style={{
+            width: `${fill}%`,
+            background: `linear-gradient(to right, ${color}, color-mix(in srgb, ${color}, white 20%))`,
+            boxShadow: `0 0 10px ${glow}`,
+          }}
+        />
+      </div>
+      {reset && <span className="panel-bar-reset">Resets in {reset}</span>}
+    </div>
+  );
+}
+
+export function UsageView({ data, displayMode, onDisconnect }: UsageViewProps) {
   const sessionPercent = data.sessionPercentUsed;
   const weeklyPercent = data.weeklyPercentUsed;
-  const sessionFill = computeFill(sessionPercent, displayMode);
-  const weeklyFill = computeFill(weeklyPercent, displayMode);
-
-  const sessionColor = getSessionColor(sessionPercent);
-  const sessionGlow = getSessionGlow(sessionPercent);
-  const weeklyColor = getWeeklyColor(weeklyPercent);
-  const weeklyGlow = getWeeklyGlow(weeklyPercent);
-
-  const sessionReset = formatResetTime(data.sessionReset);
-  const weeklyReset = formatResetTime(data.weeklyReset);
 
   return (
     <div className="panel">
@@ -46,55 +68,24 @@ export function UsageView({
       </div>
 
       <div className="panel-bars">
-        {/* 5-Hour Session bar */}
-        <div className="panel-bar-group">
-          <div className="panel-bar-label-row">
-            <span className="panel-bar-name">5-Hour Session</span>
-            <span className="panel-bar-pct">
-              {parseFloat(sessionFill.toFixed(1))}%{" "}
-              {displayMode === "remaining" ? "left" : "used"}
-            </span>
-          </div>
-          <div className="panel-bar-track">
-            <div
-              className="panel-bar-fill"
-              style={{
-                width: `${sessionFill}%`,
-                background: `linear-gradient(to right, ${sessionColor}, color-mix(in srgb, ${sessionColor}, white 20%))`,
-                boxShadow: `0 0 10px ${sessionGlow}`,
-              }}
-            />
-          </div>
-          {sessionReset && (
-            <span className="panel-bar-reset">Resets in {sessionReset}</span>
-          )}
-        </div>
+        <UsageBar
+          label="5-Hour Session"
+          fill={computeFill(sessionPercent, displayMode)}
+          color={getSessionColor(sessionPercent)}
+          glow={getSessionGlow(sessionPercent)}
+          displayMode={displayMode}
+          reset={formatResetTime(data.sessionReset)}
+        />
 
-        {/* Weekly bar */}
-        <div className="panel-bar-group">
-          <div className="panel-bar-label-row">
-            <span className="panel-bar-name">Weekly</span>
-            <span className="panel-bar-pct">
-              {parseFloat(weeklyFill.toFixed(1))}%{" "}
-              {displayMode === "remaining" ? "left" : "used"}
-            </span>
-          </div>
-          <div className="panel-bar-track">
-            <div
-              className="panel-bar-fill"
-              style={{
-                width: `${weeklyFill}%`,
-                background: `linear-gradient(to right, ${weeklyColor}, color-mix(in srgb, ${weeklyColor}, white 20%))`,
-                boxShadow: `0 0 10px ${weeklyGlow}`,
-              }}
-            />
-          </div>
-          {weeklyReset && (
-            <span className="panel-bar-reset">Resets in {weeklyReset}</span>
-          )}
-        </div>
+        <UsageBar
+          label="Weekly"
+          fill={computeFill(weeklyPercent, displayMode)}
+          color={getWeeklyColor(weeklyPercent)}
+          glow={getWeeklyGlow(weeklyPercent)}
+          displayMode={displayMode}
+          reset={formatResetTime(data.weeklyReset)}
+        />
 
-        {/* Extra usage */}
         {data.extraUsageSpend != null && (
           <div className="panel-extra">
             <span className="panel-extra-label">Extra Usage</span>
@@ -110,11 +101,7 @@ export function UsageView({
 
       <button
         className="panel-link"
-        onClick={() => {
-          import("@tauri-apps/plugin-opener").then((m) =>
-            m.openUrl("https://claude.ai/settings/usage")
-          );
-        }}
+        onClick={() => openUrl("https://claude.ai/settings/usage")}
       >
         Open Dashboard
       </button>

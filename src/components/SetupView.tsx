@@ -30,23 +30,26 @@ export function SetupView({ onSaved }: { onSaved: () => void }) {
       <p className="setup-subtitle">
         Sign in with your Anthropic account to view your usage.
       </p>
+      {status === "waiting" && (
+        <div className="setup-waiting">
+          <div className="loading-dot" />
+          <span className="setup-waiting-text">Waiting for browser...</span>
+        </div>
+      )}
       {error && <p className="setup-error">{error}</p>}
-      {status === "waiting" ? (
-        <>
-          <div className="setup-waiting">
-            <div className="loading-dot" />
-            <span className="setup-waiting-text">Waiting for browser...</span>
-          </div>
-          <button
-            className="panel-disconnect"
-            onClick={() => setStatus("idle")}
-          >
-            Cancel
-          </button>
-        </>
-      ) : (
-        <button className="setup-save" onClick={handleLogin}>
-          Login with Claude
+      <button
+        className="setup-save"
+        onClick={handleLogin}
+        disabled={status === "waiting"}
+      >
+        {status === "waiting" ? "Waiting for browser..." : "Login with Claude"}
+      </button>
+      {status === "waiting" && (
+        <button
+          className="panel-disconnect"
+          onClick={() => setStatus("idle")}
+        >
+          Cancel
         </button>
       )}
     </div>

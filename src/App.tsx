@@ -4,21 +4,13 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
+import { isTauri } from "./utils";
 import type { ClaudeUsageData, DisplayMode, Settings } from "./types";
-import { SkeletonUsageView } from "./components/SkeletonUsageView";
-import { UsageView } from "./components/UsageView";
-import { SetupView } from "./components/SetupView";
 import { SettingsView } from "./components/SettingsView";
 import { UpdateView } from "./components/UpdateView";
-
-// Detect if running inside Tauri webview vs regular browser
-const isTauri = () =>
-  typeof window !== "undefined" &&
-  !!((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
-
-// ---------------------------------------------------------------------------
-// App component
-// ---------------------------------------------------------------------------
+import { SetupView } from "./components/SetupView";
+import { SkeletonUsageView } from "./components/SkeletonUsageView";
+import { UsageView } from "./components/UsageView";
 
 type AppMode = "loading" | "setup" | "usage" | "settings" | "update";
 

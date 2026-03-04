@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { UpdateInfo } from "../types";
 import appLogo from "../assets/app-logo.png";
+import type { UpdateInfo } from "../types";
 
 export function UpdateView() {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
@@ -11,7 +11,7 @@ export function UpdateView() {
     const unlisten = listen<UpdateInfo>("update-info", (event) => {
       setInfo(event.payload);
     });
-    getCurrentWindow().emit("update-ready", {});
+    getCurrentWindow().emit("update-ready", {}).catch(() => {});
     return () => {
       unlisten.then((fn) => fn());
     };
