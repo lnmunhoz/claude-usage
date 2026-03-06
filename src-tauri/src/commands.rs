@@ -16,7 +16,7 @@ use crate::usage::fetch_claude_usage_impl;
 
 #[tauri::command]
 pub(crate) async fn fetch_claude_usage() -> Result<ClaudeUsageData, String> {
-    fetch_claude_usage_impl().await
+    fetch_claude_usage_impl().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
