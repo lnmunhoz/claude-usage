@@ -7,6 +7,35 @@ use crate::models::{
 };
 use crate::oauth::{load_claude_credentials, refresh_claude_token};
 
+#[derive(Debug)]
+pub(crate) enum FetchError {
+    RateLimit { retry_after_secs: Option<u64> },
+    Other(String),
+}
+
+impl std::fmt::Display for FetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FetchError::RateLimit { retry_after_secs } => {
+                if let Some(secs) = retry_after_secs {
+                    write!(f, "Rate limited. Retry after {}s.", secs)
+                } else {
+                    write!(f, "Rate limited. Please try again later.")
+                }
+            }
+            FetchError::Other(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
+fn extract_retry_after(response: &reqwest::Response) -> Option<u64> {
+    response
+        .headers()
+        .get("retry-after")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+}
+
 pub(crate) fn plan_display_from_profile(org: &ClaudeProfileOrganization) -> Option<String> {
     let tier = org.rate_limit_tier.as_deref().unwrap_or("");
     let org_type = org.organization_type.as_deref().unwrap_or("");
@@ -136,12 +165,14 @@ fn extract_window_reset(root: &Value, keys: &[&str]) -> Option<String> {
     None
 }
 
-pub(crate) async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, String> {
-    let credentials = load_claude_credentials().await?;
+pub(crate) async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, FetchError> {
+    let credentials = load_claude_credentials()
+        .await
+        .map_err(FetchError::Other)?;
     let access_token = credentials
         .access_token
         .as_deref()
-        .ok_or_else(|| "Claude credentials are missing accessToken.".to_string())?;
+        .ok_or_else(|| FetchError::Other("Claude credentials are missing accessToken.".to_string()))?;
 
     println!(
         "[claude-usage] Fetching usage with token starting with: {}...",
@@ -157,53 +188,70 @@ pub(crate) async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, String>
         .timeout(std::time::Duration::from_secs(15))
         .send()
         .await
-        .map_err(|e| format!("Claude OAuth request failed: {}", e))?;
+        .map_err(|e| FetchError::Other(format!("Claude OAuth request failed: {}", e)))?;
 
     let initial_status = response.status();
 
     // On 401, attempt token refresh and retry once before reading the body
-    let (status, body, access_token) = if initial_status == reqwest::StatusCode::UNAUTHORIZED {
-        println!("[claude-usage] Usage API returned 401, attempting token refresh and retry...");
+    let (status, body, retry_after_secs, access_token) =
+        if initial_status == reqwest::StatusCode::UNAUTHORIZED {
+            println!(
+                "[claude-usage] Usage API returned 401, attempting token refresh and retry..."
+            );
 
-        // Discard the 401 response body
-        let _ = response.text().await;
+            // Discard the 401 response body
+            let _ = response.text().await;
 
-        let oauth_blob =
-            read_keychain_oauth_blob().map_err(|e| format!("Re-auth failed: {}", e))?;
-        let refresh_tok = oauth_blob
-            .refresh_token
-            .as_deref()
-            .ok_or_else(|| "No refresh token available for retry.".to_string())?;
-        let refreshed = refresh_claude_token(refresh_tok, &oauth_blob).await?;
-        let new_token = refreshed
-            .access_token
-            .as_deref()
-            .ok_or_else(|| "Refresh succeeded but no access token returned.".to_string())?
-            .to_string();
+            let oauth_blob = read_keychain_oauth_blob()
+                .map_err(|e| FetchError::Other(format!("Re-auth failed: {}", e)))?;
+            let refresh_tok = oauth_blob.refresh_token.as_deref().ok_or_else(|| {
+                FetchError::Other("No refresh token available for retry.".to_string())
+            })?;
+            let refreshed = refresh_claude_token(refresh_tok, &oauth_blob)
+                .await
+                .map_err(FetchError::Other)?;
+            let new_token = refreshed
+                .access_token
+                .as_deref()
+                .ok_or_else(|| {
+                    FetchError::Other(
+                        "Refresh succeeded but no access token returned.".to_string(),
+                    )
+                })?
+                .to_string();
 
-        let retry_response = client
-            .get("https://api.anthropic.com/api/oauth/usage")
-            .header("Accept", "application/json")
-            .header("Authorization", format!("Bearer {}", new_token))
-            .header("anthropic-beta", "oauth-2025-04-20")
-            .timeout(std::time::Duration::from_secs(15))
-            .send()
-            .await
-            .map_err(|e| format!("Retry request failed: {}", e))?;
+            let retry_response = client
+                .get("https://api.anthropic.com/api/oauth/usage")
+                .header("Accept", "application/json")
+                .header("Authorization", format!("Bearer {}", new_token))
+                .header("anthropic-beta", "oauth-2025-04-20")
+                .timeout(std::time::Duration::from_secs(15))
+                .send()
+                .await
+                .map_err(|e| FetchError::Other(format!("Retry request failed: {}", e)))?;
 
-        let retry_status = retry_response.status();
-        let retry_body = retry_response
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read retry response: {}", e))?;
-        (retry_status, retry_body, new_token)
-    } else {
-        let body = response
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read Claude OAuth response body: {}", e))?;
-        (initial_status, body, access_token.to_string())
-    };
+            let retry_status = retry_response.status();
+            let retry_after = if retry_status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                extract_retry_after(&retry_response)
+            } else {
+                None
+            };
+            let retry_body = retry_response
+                .text()
+                .await
+                .map_err(|e| FetchError::Other(format!("Failed to read retry response: {}", e)))?;
+            (retry_status, retry_body, retry_after, new_token)
+        } else {
+            let retry_after = if initial_status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                extract_retry_after(&response)
+            } else {
+                None
+            };
+            let body = response.text().await.map_err(|e| {
+                FetchError::Other(format!("Failed to read Claude OAuth response body: {}", e))
+            })?;
+            (initial_status, body, retry_after, access_token.to_string())
+        };
 
     if !status.is_success() {
         println!(
@@ -211,6 +259,14 @@ pub(crate) async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, String>
             status,
             &body[..body.len().min(500)]
         );
+
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            println!(
+                "[claude-usage] Rate limited. Retry-After: {:?}",
+                retry_after_secs
+            );
+            return Err(FetchError::RateLimit { retry_after_secs });
+        }
 
         // Parse error body for a user-friendly message
         if let Ok(err_val) = serde_json::from_str::<Value>(&body) {
@@ -220,24 +276,24 @@ pub(crate) async fn fetch_claude_usage_impl() -> Result<ClaudeUsageData, String>
                 .and_then(|m| m.as_str())
             {
                 if msg.contains("scope") {
-                    return Err(format!(
+                    return Err(FetchError::Other(format!(
                         "Token missing required scope. {}. Re-run `claude login` or create a token with the user:profile scope.",
                         msg
-                    ));
+                    )));
                 }
-                return Err(format!("Claude API error: {}", msg));
+                return Err(FetchError::Other(format!("Claude API error: {}", msg)));
             }
         }
 
-        return Err(format!(
+        return Err(FetchError::Other(format!(
             "Claude OAuth API returned HTTP {}. {}",
             status,
             &body[..body.len().min(200)]
-        ));
+        )));
     }
 
-    let value: Value =
-        serde_json::from_str(&body).map_err(|e| format!("Invalid Claude OAuth JSON: {}", e))?;
+    let value: Value = serde_json::from_str(&body)
+        .map_err(|e| FetchError::Other(format!("Invalid Claude OAuth JSON: {}", e)))?;
 
     let typed = serde_json::from_value::<ClaudeOAuthUsageResponse>(value.clone()).ok();
 
