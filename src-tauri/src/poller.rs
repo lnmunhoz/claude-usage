@@ -32,6 +32,7 @@ impl PollerHandle {
 const MAX_BACKOFF_SECS: u64 = 900; // 15 minutes
 const RATE_LIMIT_INITIAL_BACKOFF_SECS: u64 = 30;
 const MAX_RATE_LIMIT_BACKOFF_SECS: u64 = 600; // 10 minutes
+const MIN_RETRY_AFTER_SECS: u64 = 5; // clamp Retry-After: 0 to avoid zero-period panic
 
 enum PollOutcome {
     Success,
@@ -60,7 +61,7 @@ pub(crate) fn start_poller(app_handle: AppHandle, initial_interval_secs: u64) ->
             PollOutcome::RateLimit { retry_after_secs } => {
                 is_rate_limited = true;
                 rate_limit_failures = 1;
-                let secs = retry_after_secs.unwrap_or(RATE_LIMIT_INITIAL_BACKOFF_SECS);
+                let secs = retry_after_secs.unwrap_or(RATE_LIMIT_INITIAL_BACKOFF_SECS).max(MIN_RETRY_AFTER_SECS);
                 let _ = app_handle.emit(
                     "rate-limited",
                     serde_json::json!({ "retryAfterSecs": secs }),
@@ -95,6 +96,7 @@ pub(crate) fn start_poller(app_handle: AppHandle, initial_interval_secs: u64) ->
                             is_rate_limited = true;
                             rate_limit_failures += 1;
                             let backoff_secs = if let Some(secs) = retry_after_secs {
+                                let secs = secs.max(MIN_RETRY_AFTER_SECS);
                                 println!("[claude-usage] Rate limited. Respecting Retry-After: {}s", secs);
                                 secs
                             } else {
